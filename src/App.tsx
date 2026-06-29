@@ -56,8 +56,9 @@ interface Annotation {
 function ControlPanel() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isScrollingSetup, setIsScrollingSetup] = useState(false);
 
-  const handleCapture = async (mode: "fullscreen" | "region") => {
+  const handleCapture = async (mode: "fullscreen" | "region" | "window") => {
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -67,7 +68,11 @@ function ControlPanel() {
       
       // takes screenshot and stores bytes in Rust memory
       await invoke("take_screenshot");
-      const target = mode === "fullscreen" ? "main" : "region-selector";
+      
+      let target = "main";
+      if (mode === "region" || mode === "window" || isScrollingSetup) {
+        target = "region-selector";
+      }
       
       // Wake up the target window explicitly so its JS context resumes
       const targetWindow = new Window(target);
@@ -75,8 +80,9 @@ function ControlPanel() {
       await targetWindow.setFocus();
       
       // emit lightweight signal
-      await emit("load-image", { target });
+      await emit("load-image", { target, isScrolling: isScrollingSetup, isWindowMode: mode === "window", isFullScreen: mode === "fullscreen" });
       await getCurrentWindow().hide();
+      setIsScrollingSetup(false); // reset state after use
     } catch (e: any) {
       console.error(e);
       setErrorMsg(String(e));
@@ -89,10 +95,21 @@ function ControlPanel() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         getCurrentWindow().hide();
+        setIsScrollingSetup(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    
+    const unlisten = listen("open-control-panel-for-scrolling", async () => {
+      setIsScrollingSetup(true);
+      await getCurrentWindow().show();
+      await getCurrentWindow().setFocus();
+    });
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      unlisten.then(f => f());
+    };
   }, []);
 
   return (
@@ -102,12 +119,14 @@ function ControlPanel() {
           {errorMsg}
         </div>
       )}
-      <h2 className="text-white font-semibold mb-4 opacity-80 mt-2">Select Capture Mode</h2>
+      <h2 className="text-white font-semibold mb-4 opacity-80 mt-2">
+        {isScrollingSetup ? "Select Scrolling Area" : "Select Capture Mode"}
+      </h2>
       <div className="flex gap-4">
         <button 
           onClick={() => handleCapture("fullscreen")}
           disabled={loading}
-          className="flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border border-navy-600 shadow-md active:scale-95"
+          className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
         >
           <span className="text-2xl">🖥️</span>
           <span className="text-white font-medium text-sm">Full Screen</span>
@@ -115,10 +134,18 @@ function ControlPanel() {
         <button 
           onClick={() => handleCapture("region")}
           disabled={loading}
-          className="flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border border-navy-600 shadow-md active:scale-95"
+          className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
         >
           <span className="text-2xl">✂️</span>
           <span className="text-white font-medium text-sm">Region</span>
+        </button>
+        <button 
+          onClick={() => handleCapture("window")}
+          disabled={loading}
+          className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
+        >
+          <span className="text-2xl">🪟</span>
+          <span className="text-white font-medium text-sm">Window</span>
         </button>
       </div>
     </div>
@@ -138,6 +165,11 @@ function RegionSelector() {
   const [isScrollingMode, setIsScrollingMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isHiding, setIsHiding] = useState(false);
+  const [isWindowMode, setIsWindowMode] = useState(false);
+  const [monitorPos, setMonitorPos] = useState({ x: 0, y: 0 });
+  const [windows, setWindows] = useState<any[]>([]);
+  const [hoveredWindow, setHoveredWindow] = useState<any | null>(null);
+  const [pendingFullScreenScroll, setPendingFullScreenScroll] = useState(false);
 
   useEffect(() => {
     const unlistenStop = listen("scrolling-stopped", async () => {
@@ -163,7 +195,7 @@ function RegionSelector() {
       await getCurrentWindow().hide();
     });
 
-    const unlisten = listen<{ target: string, isScrolling?: boolean }>("load-image", async (e) => {
+    const unlisten = listen<{ target: string, isScrolling?: boolean, isWindowMode?: boolean, isFullScreen?: boolean }>("load-image", async (e) => {
       if (e.payload.target !== "region-selector") return;
       setIsScrollingMode(e.payload.isScrolling || false);
       setIsRecording(false);
@@ -179,8 +211,20 @@ function RegionSelector() {
         }
         
         if (monitor) {
+          setMonitorPos({ x: monitor.position.x, y: monitor.position.y });
           await getCurrentWindow().setSize(monitor.size);
           await getCurrentWindow().setPosition(monitor.position);
+        }
+        
+        setIsWindowMode(e.payload.isWindowMode || false);
+        if (e.payload.isWindowMode) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const winList = await invoke<any[]>("get_windows");
+            setWindows(winList);
+          } catch (err) {
+            console.error("Failed to fetch windows", err);
+          }
         }
         
         await getCurrentWindow().show(); // Force show to display errors
@@ -201,6 +245,10 @@ function RegionSelector() {
           if (offCtx) offCtx.drawImage(img, 0, 0);
           setBaseImage(offCanvas);
           URL.revokeObjectURL(url);
+          
+          if (e.payload.isFullScreen && e.payload.isScrolling) {
+            setPendingFullScreenScroll(true);
+          }
         };
         img.onerror = () => {
           setErrorMsg("Failed to load image from backend.");
@@ -239,7 +287,26 @@ function RegionSelector() {
       }
 
       // Draw bright selection area
-      if (startPos && currentPos) {
+      if (isWindowMode && hoveredWindow && !isDragging) {
+        // Draw window highlight
+        const wx = hoveredWindow.x - monitorPos.x;
+        const wy = hoveredWindow.y - monitorPos.y;
+        const ww = hoveredWindow.width;
+        const wh = hoveredWindow.height;
+        
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(wx, wy, ww, wh);
+        ctx.clip();
+        ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+        
+        ctx.fillStyle = "rgba(129, 140, 248, 0.2)"; // Soft blue tint
+        ctx.fillRect(wx, wy, ww, wh);
+        ctx.strokeStyle = "#818cf8";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(wx, wy, ww, wh);
+      } else if (startPos && currentPos) {
         const rx = Math.min(startPos.x, currentPos.x);
         const ry = Math.min(startPos.y, currentPos.y);
         const rw = Math.abs(currentPos.x - startPos.x);
@@ -262,7 +329,14 @@ function RegionSelector() {
     window.addEventListener("resize", handleResize);
     handleResize();
     return () => window.removeEventListener("resize", handleResize);
-  }, [baseImage, startPos, currentPos, isRecording]);
+  }, [baseImage, startPos, currentPos, isRecording, isWindowMode, hoveredWindow, monitorPos]);
+
+  useEffect(() => {
+    if (pendingFullScreenScroll && baseImage) {
+      setPendingFullScreenScroll(false);
+      startScrollingCaptureLogic(0, 0, window.innerWidth, window.innerHeight);
+    }
+  }, [pendingFullScreenScroll, baseImage]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -274,15 +348,134 @@ function RegionSelector() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const onMouseDown = (e: React.MouseEvent) => {
+  const startScrollingCaptureLogic = async (rx: number, ry: number, rw: number, rh: number) => {
+    if (!baseImage) return;
+    const scaleX = baseImage.width / window.innerWidth;
+    const scaleY = baseImage.height / window.innerHeight;
+    
+    const physicalW = Math.round(rw * scaleX);
+    const physicalH = Math.round(rh * scaleY);
+    const physicalX = Math.round(rx * scaleX);
+    const physicalY = Math.round(ry * scaleY);
+    
+    setIsRecording(true);
+    setIsHiding(true);
+    
+    // Wait just 50ms for the DOM to paint the opacity: 0
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Hide Region Selector asynchronously (OS might take 200ms+ due to animation)
+    getCurrentWindow().hide().catch(console.error);
+
+    // 6. Show the stop recording button
+    const { Window } = await import('@tauri-apps/api/window');
+    const stopWin = await Window.getByLabel('stop-recording');
+    const { loadSettings } = await import('./store');
+    const settings = await loadSettings();
+    
+    if (stopWin) {
+      const { LogicalPosition } = await import('@tauri-apps/api/dpi');
+      const pos = settings.stopButtonPosition || "bottom";
+      
+      const margin = 50;
+      const w = 80;
+      const h = 80;
+      let nx = window.innerWidth / 2 - w / 2;
+      let ny = window.innerHeight - h - margin;
+      
+      if (pos === "top") {
+          ny = margin;
+      } else if (pos === "left") {
+          nx = margin;
+          ny = window.innerHeight / 2 - h / 2;
+      } else if (pos === "right") {
+          nx = window.innerWidth - w - margin;
+          ny = window.innerHeight / 2 - h / 2;
+      }
+      
+      if (pos !== "hidden") {
+        await stopWin.setPosition(new LogicalPosition(nx, ny));
+        await stopWin.show();
+      }
+    }
+    
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke("start_scrolling_capture", {
+        x: physicalX,
+        y: physicalY,
+        w: physicalW,
+        h: physicalH,
+        maxDurationSeconds: settings.maxRecordingDuration || 30
+      });
+      // Do NOT call load-image yet. We wait for stop_scrolling_capture.
+    } catch (e) {
+      console.error(e);
+      if (stopWin) stopWin.hide().catch(console.error);
+      setIsRecording(false);
+      setIsHiding(false);
+      await getCurrentWindow().show();
+    }
+  };
+
+  const onMouseDown = async (e: React.MouseEvent) => {
     if (isRecording) return;
+    
+    if (isWindowMode) {
+      if (hoveredWindow) {
+        if (isScrollingMode) {
+          // Manually trigger the scrolling logic
+          const rx = hoveredWindow.x - monitorPos.x;
+          const ry = hoveredWindow.y - monitorPos.y;
+          const rw = hoveredWindow.width;
+          const rh = hoveredWindow.height;
+          await startScrollingCaptureLogic(rx, ry, rw, rh);
+        } else {
+          // Take regular window screenshot
+          try {
+            setIsHiding(true);
+            await getCurrentWindow().hide();
+            
+            const { invoke } = await import('@tauri-apps/api/core');
+            
+            // Activate the target app to ensure traffic lights are colored
+            if (hoveredWindow.app_name) {
+              await invoke("activate_app", { appName: hoveredWindow.app_name });
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            
+            await invoke("capture_window", { id: hoveredWindow.id });
+            await emit("load-image", { target: "main" });
+          } catch (err) {
+            console.error("Window capture failed", err);
+          }
+        }
+      }
+      return;
+    }
+    
     setStartPos({ x: e.clientX, y: e.clientY });
     setCurrentPos({ x: e.clientX, y: e.clientY });
     setIsDragging(true);
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || isRecording) return;
+    if (isRecording) return;
+    
+    if (isWindowMode && !isDragging) {
+      // Find the hovered window
+      const globalX = e.clientX + monitorPos.x;
+      const globalY = e.clientY + monitorPos.y;
+      
+      const hovered = windows.find(w => 
+        globalX >= w.x && globalX <= w.x + w.width &&
+        globalY >= w.y && globalY <= w.y + w.height
+      );
+      setHoveredWindow(hovered || null);
+      return;
+    }
+    
+    if (!isDragging) return;
     setCurrentPos({ x: e.clientX, y: e.clientY });
   };
 
@@ -296,82 +489,41 @@ function RegionSelector() {
     const rh = Math.abs(currentPos.y - startPos.y);
 
     if (rw > 10 && rh > 10) {
-      // Crop image
-      const scaleX = baseImage.width / window.innerWidth;
-      const scaleY = baseImage.height / window.innerHeight;
-      
-      const physicalW = Math.round(rw * scaleX);
-      const physicalH = Math.round(rh * scaleY);
-      const physicalX = Math.round(rx * scaleX);
-      const physicalY = Math.round(ry * scaleY);
-      
       if (isScrollingMode) {
-        setIsRecording(true);
-        setIsHiding(true);
+        await startScrollingCaptureLogic(rx, ry, rw, rh);
+      } else {
+        // Crop image
+        const scaleX = baseImage.width / window.innerWidth;
+        const scaleY = baseImage.height / window.innerHeight;
         
-        // Wait just 50ms for the DOM to paint the opacity: 0
-        await new Promise(resolve => setTimeout(resolve, 50));
+        const physicalW = Math.round(rw * scaleX);
+        const physicalH = Math.round(rh * scaleY);
+        const physicalX = Math.round(rx * scaleX);
+        const physicalY = Math.round(ry * scaleY);
         
-        // Hide Region Selector asynchronously (OS might take 200ms+ due to animation)
-        getCurrentWindow().hide().catch(console.error);
-
-        // 6. Show the stop recording button
-        const { Window } = await import('@tauri-apps/api/window');
-        const stopWin = await Window.getByLabel('stop-recording');
-        const { loadSettings } = await import('./store');
-        const settings = await loadSettings();
-        
-        if (stopWin) {
-          const { LogicalPosition } = await import('@tauri-apps/api/dpi');
-          const pos = settings.stopButtonPosition || "bottom";
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = physicalW;
+        offCanvas.height = physicalH;
+        const offCtx = offCanvas.getContext("2d");
+        if (offCtx) {
+          offCtx.drawImage(
+            baseImage,
+            physicalX, physicalY, physicalW, physicalH,
+            0, 0, physicalW, physicalH
+          );
           
-          const margin = 50;
-          const w = 80;
-          const h = 80;
-          let nx = window.innerWidth / 2 - w / 2;
-          let ny = window.innerHeight - h - margin;
+          const dataUrl = offCanvas.toDataURL("image/png");
+          const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+          const bytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
           
-          if (pos === "top") {
-             ny = margin;
-          } else if (pos === "left") {
-             nx = margin;
-             ny = window.innerHeight / 2 - h / 2;
-          } else if (pos === "right") {
-             nx = window.innerWidth - w - margin;
-             ny = window.innerHeight / 2 - h / 2;
-          }
-          
-          if (pos !== "hidden") {
-            await stopWin.setPosition(new LogicalPosition(nx, ny));
-            await stopWin.show();
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke("store_cropped_image", { bytes: Array.from(bytes) });
+            await emit("load-image", { target: "main" });
+          } catch (err) {
+            console.error("Failed to store cropped image", err);
           }
         }
-
-        // 7. FINALLY start the backend capture (now that the screen is clean!)
-        await invoke("start_scrolling_capture", { 
-          x: physicalX, 
-          y: physicalY, 
-          w: physicalW, 
-          h: physicalH,
-          maxDurationSeconds: settings.maxRecordingDuration || 30
-        });
-        return;
-      }
-      
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = physicalW;
-      tempCanvas.height = physicalH;
-      const tCtx = tempCanvas.getContext("2d");
-      if (tCtx) {
-        tCtx.drawImage(
-          baseImage, 
-          Math.round(rx * scaleX), Math.round(ry * scaleY), physicalW, physicalH, 
-          0, 0, physicalW, physicalH
-        );
-        
-        // Convert to dataURL to avoid JSON byte array bottleneck
-        const dataUrl = tempCanvas.toDataURL("image/png");
-        await emit("load-image", { dataUrl, target: "main" });
         await getCurrentWindow().hide();
       }
     } else {
@@ -974,6 +1126,7 @@ function MainApp() {
             if (normFired === normalizeShortcut(settings.shortcutControlPanel)) mode = "control";
             else if (normFired === normalizeShortcut(settings.shortcutFullScreen)) mode = "fullscreen";
             else if (normFired === normalizeShortcut(settings.shortcutRegion)) mode = "region";
+            else if (normFired === normalizeShortcut(settings.shortcutWindow)) mode = "window";
             else if (normFired === normalizeShortcut(settings.shortcutScrolling)) mode = "scrolling";
             
             if (!mode) return;
@@ -1010,25 +1163,21 @@ function MainApp() {
 
                 await invoke("take_screenshot");
 
-                let target = "main";
-                let isScrolling = false;
+                const isScrolling = mode === "scrolling";
                 if (mode === "fullscreen") {
-                    target = "main";
-                } else if (mode === "region") {
-                    target = "region-selector";
+                  await emit("load-image", { target: "main", isScrolling });
+                } else if (mode === "region" || mode === "window") {
+                    // Show region selector window
+                    const rs = await Window.getByLabel("region-selector");
+                    if (rs) {
+                      await rs.show();
+                      await rs.setFocus();
+                      // Tell it what mode it is
+                      await emit("load-image", { target: "region-selector", isScrolling, isWindowMode: mode === "window" });
+                    }
                 } else if (mode === "scrolling") {
-                    target = "region-selector";
-                    isScrolling = true;
+                    await emit("open-control-panel-for-scrolling");
                 }
-                
-                const w = await Window.getByLabel(target);
-                if (w) {
-                  await w.show();
-                  await w.setFocus();
-                }
-                
-                const { emit } = await import('@tauri-apps/api/event');
-                await emit("load-image", { target, isScrolling });
               }
             } catch (actionErr) {
               console.error("Action failed", actionErr);
@@ -1044,6 +1193,7 @@ function MainApp() {
               settings.shortcutControlPanel, 
               settings.shortcutFullScreen, 
               settings.shortcutRegion,
+              settings.shortcutWindow,
               settings.shortcutScrolling
             ]
           });

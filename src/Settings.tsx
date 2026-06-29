@@ -31,6 +31,7 @@ export default function Settings() {
         shortcutControlPanel: "CommandOrControl+Alt+5",
         shortcutFullScreen: "CommandOrControl+Alt+3",
         shortcutRegion: "CommandOrControl+Alt+4",
+        shortcutWindow: "CommandOrControl+Alt+7",
         shortcutScrolling: "CommandOrControl+Alt+6",
         saveOnCopy: false,
         defaultSaveLocation: "",
@@ -131,6 +132,11 @@ export default function Settings() {
               label="Capture Region" 
               value={settings.shortcutRegion}
               onChange={(val) => updateSetting('shortcutRegion', val)}
+            />
+            <ShortcutInput 
+              label="Capture Window" 
+              value={settings.shortcutWindow}
+              onChange={(val) => updateSetting('shortcutWindow', val)}
             />
             <ShortcutInput 
               label="Scrolling Capture" 

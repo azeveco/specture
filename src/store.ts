@@ -12,6 +12,7 @@ export interface SpectureSettings {
   shortcutControlPanel: string;
   shortcutFullScreen: string;
   shortcutRegion: string;
+  shortcutWindow: string;
   shortcutScrolling: string;
   saveOnCopy: boolean;
   defaultSaveLocation: string;
@@ -26,6 +27,7 @@ export const defaultSettings: SpectureSettings = {
   shortcutControlPanel: "CommandOrControl+Alt+5",
   shortcutFullScreen: "CommandOrControl+Alt+3",
   shortcutRegion: "CommandOrControl+Alt+4",
+  shortcutWindow: "CommandOrControl+Alt+7",
   shortcutScrolling: "CommandOrControl+Alt+6",
   saveOnCopy: false,
   defaultSaveLocation: "",

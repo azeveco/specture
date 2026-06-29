@@ -159,6 +159,7 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/gray_icon.png")).unwrap();
             let mut builder = tauri::tray::TrayIconBuilder::with_id("main_tray")
                 .icon(tray_icon)
+                .icon_as_template(true)
                 .tooltip("Specture");
                 
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -265,6 +266,133 @@ fn log_debug(message: String) {
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct WindowInfo {
+    pub id: u32,
+    pub pid: u32,
+    pub app_name: String,
+    pub title: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub z: i32,
+}
+
+#[tauri::command]
+fn store_cropped_image(bytes: Vec<u8>, state: State<'_, AppState>) -> Result<(), String> {
+    log_debug("store_cropped_image called".to_string());
+    *state.image_buffer.lock().unwrap() = Some(bytes);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_windows() -> Result<Vec<WindowInfo>, String> {
+    log_debug("get_windows called".to_string());
+    let windows = xcap::Window::all().map_err(|e| e.to_string())?;
+    
+    let mut result = Vec::new();
+    for w in windows {
+        let app_name = w.app_name().unwrap_or_default();
+        let title = w.title().unwrap_or_default();
+        let width = w.width().unwrap_or(0);
+        let height = w.height().unwrap_or(0);
+        let is_minimized = w.is_minimized().unwrap_or(false);
+        
+        // filter out windows without size
+        if width == 0 || height == 0 {
+            continue;
+        }
+        
+        if is_minimized {
+            continue;
+        }
+        
+        // Filter out macOS system background windows and specific apps
+        let ignored_apps = [
+            "Window Server", 
+            "Dock", 
+            "Control Center", 
+            "Alcove", 
+            "WallpaperAgent",
+            "NotificationCenter",
+            "Specture"
+        ];
+        
+        if ignored_apps.contains(&app_name.as_str()) {
+            continue;
+        }
+        
+        // Optional: filter out completely empty app names
+        if app_name.trim().is_empty() {
+            continue;
+        }
+        
+        log_debug(format!("Found window: {} - {} ({}x{})", app_name, title, width, height));
+        
+        result.push(WindowInfo {
+            id: w.id().unwrap_or(0),
+            pid: w.pid().unwrap_or(0),
+            app_name,
+            title,
+            x: w.x().unwrap_or(0),
+            y: w.y().unwrap_or(0),
+            width,
+            height,
+            z: w.z().unwrap_or(0),
+        });
+    }
+    
+    Ok(result)
+}
+
+#[tauri::command]
+fn activate_app(app_name: String) -> Result<(), String> {
+    log_debug(format!("Activating app: {}", app_name));
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!("tell application \"{}\" to activate", app_name);
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn capture_window(id: u32, state: State<'_, AppState>) -> Result<(), String> {
+    log_debug(format!("capture_window called for id: {}", id));
+    
+    let windows = xcap::Window::all().map_err(|e| e.to_string())?;
+    let target = windows.into_iter().find(|w| w.id().unwrap_or(0) == id);
+    
+    if let Some(w) = target {
+        let image = w.capture_image().map_err(|e| {
+            let msg = format!("Failed to capture window image: {}", e);
+            log_debug(msg.clone());
+            msg
+        })?;
+        
+        let width = image.width();
+        let height = image.height();
+        let rgba = image.into_raw();
+        
+        let mut buf = Vec::new();
+        let encoder = image::codecs::png::PngEncoder::new_with_quality(&mut buf, image::codecs::png::CompressionType::Fast, image::codecs::png::FilterType::NoFilter);
+        encoder.write_image(&rgba, width, height, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())?;
+        
+        *state.image_buffer.lock().unwrap() = Some(buf);
+        
+        log_debug("capture_window succeeded".to_string());
+        Ok(())
+    } else {
+        let msg = format!("Window with id {} not found", id);
+        log_debug(msg.clone());
+        Err(msg)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     Builder::default()
@@ -300,6 +428,7 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::with_id("main_tray")
                 .icon(tray_icon)
+                .icon_as_template(true)
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "quit" => {
@@ -363,7 +492,11 @@ pub fn run() {
             is_scrolling_active,
             register_shortcuts,
             log_debug,
-            set_debug_logs_enabled
+            set_debug_logs_enabled,
+            store_cropped_image,
+            get_windows,
+            capture_window,
+            activate_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
