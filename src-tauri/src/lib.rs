@@ -1,0 +1,370 @@
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::TrayIconBuilder,
+    Manager, Builder, Emitter
+};
+use xcap::Monitor;
+use std::sync::Mutex;
+use tauri::State;
+use std::fs::File;
+use std::io::Write;
+use std::thread;
+use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use image::ImageEncoder;
+mod stitcher;
+
+#[tauri::command]
+fn register_shortcuts(app: tauri::AppHandle, shortcuts: Vec<String>) -> Result<(), String> {
+    // Unregister any existing shortcuts
+    let _ = app.global_shortcut().unregister_all();
+    
+    for s in shortcuts {
+        if s.is_empty() { continue; }
+        match s.parse::<Shortcut>() {
+            Ok(sc) => {
+                if let Err(e) = app.global_shortcut().register(sc) {
+                    eprintln!("Failed to register shortcut {}: {}", s, e);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to parse shortcut {}: {:?}", s, e);
+            }
+        }
+    }
+    Ok(())
+}
+
+struct AppState {
+    image_buffer: Mutex<Option<Vec<u8>>>,
+}
+
+struct RecordingState {
+    frames: Arc<Mutex<Vec<image::RgbaImage>>>,
+    is_recording: Arc<AtomicBool>,
+}
+
+impl Default for RecordingState {
+    fn default() -> Self {
+        Self {
+            frames: Arc::new(Mutex::new(Vec::new())),
+            is_recording: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+/// Command exposed to the frontend to trigger a screenshot.
+/// Returns the image as a base64 string or raw byte array (Vec<u8>).
+#[tauri::command]
+async fn take_screenshot(state: State<'_, AppState>, window: tauri::WebviewWindow) -> Result<(), String> {
+    let current_monitor_name = window.current_monitor()
+        .unwrap_or(None)
+        .and_then(|m| m.name().cloned())
+        .unwrap_or_default();
+    
+    let monitors = Monitor::all().map_err(|e| e.to_string())?;
+    let monitor = monitors.into_iter().find(|m| m.name().unwrap_or_default() == current_monitor_name).unwrap_or_else(|| {
+        Monitor::all().unwrap().into_iter().next().unwrap()
+    });
+    
+    let image = monitor.capture_image().map_err(|e| e.to_string())?;
+    
+    let width = image.width();
+    let height = image.height();
+    
+    let mut buf = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new_with_quality(&mut buf, image::codecs::png::CompressionType::Fast, image::codecs::png::FilterType::NoFilter);
+    encoder.write_image(&image.into_raw(), width, height, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())?;
+    
+    *state.image_buffer.lock().unwrap() = Some(buf);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_image_buffer(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
+    if let Some(bytes) = state.image_buffer.lock().unwrap().as_ref() {
+        Ok(tauri::ipc::Response::new(bytes.clone()))
+    } else {
+        Err("No image buffer found".into())
+    }
+}
+
+#[tauri::command]
+fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::WebviewWindow, app: tauri::AppHandle, x: u32, y: u32, w: u32, h: u32, max_duration_seconds: u64) -> Result<(), String> {
+    log_debug(format!("start_scrolling_capture called. rect: {},{},{},{}", x, y, w, h));
+    state.is_recording.store(true, Ordering::SeqCst);
+    state.frames.lock().unwrap().clear();
+    
+    let app_clone = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = app_clone.remove_tray_by_id("main_tray");
+        
+        let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/red_stop_icon.png")).unwrap();
+        let _ = tauri::tray::TrayIconBuilder::with_id("main_tray_recording")
+            .icon(tray_icon)
+            .tooltip("Stop Recording")
+            .on_tray_icon_event(|tray, event| {
+                if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                    let app = tray.app_handle();
+                    let state = app.state::<RecordingState>();
+                    if state.is_recording.load(Ordering::SeqCst) {
+                        state.is_recording.store(false, Ordering::SeqCst);
+                        let _ = app.emit("scrolling-stopped", ());
+                    }
+                }
+            })
+            .build(&app_clone);
+    });
+
+    let current_monitor_name = window.current_monitor()
+        .unwrap_or(None)
+        .and_then(|m| m.name().cloned())
+        .unwrap_or_default();
+
+    let is_recording = state.is_recording.clone();
+    let frames = state.frames.clone();
+
+    thread::spawn(move || {
+        let start_time = std::time::Instant::now();
+        
+        while is_recording.load(Ordering::SeqCst) {
+            if start_time.elapsed().as_secs() >= max_duration_seconds {
+                // Timeout reached
+                is_recording.store(false, Ordering::SeqCst);
+                let _ = app.emit("scrolling-stopped", ());
+                break;
+            }
+            
+            let monitors = match Monitor::all() {
+                Ok(m) => m,
+                Err(_) => break,
+            };
+            let monitor = monitors.into_iter().find(|m| m.name().unwrap_or_default() == current_monitor_name).unwrap_or_else(|| {
+                Monitor::all().unwrap().into_iter().next().unwrap()
+            });
+
+            if let Ok(image) = monitor.capture_image() {
+                let img_cropped = image::imageops::crop_imm(&image, x, y, w, h).to_image();
+                frames.lock().unwrap().push(img_cropped);
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        
+        let app_clone = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = app_clone.remove_tray_by_id("main_tray_recording");
+            
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/gray_icon.png")).unwrap();
+            let mut builder = tauri::tray::TrayIconBuilder::with_id("main_tray")
+                .icon(tray_icon)
+                .tooltip("Specture");
+                
+            use tauri::menu::{MenuBuilder, MenuItemBuilder};
+            if let Ok(quit_i) = MenuItemBuilder::with_id("quit", "Quit").build(&app_clone) {
+                if let Ok(capture_i) = MenuItemBuilder::with_id("capture", "Take Screenshot").build(&app_clone) {
+                    if let Ok(settings_i) = MenuItemBuilder::with_id("settings", "Settings...").build(&app_clone) {
+                        if let Ok(menu) = MenuBuilder::new(&app_clone).items(&[&capture_i, &settings_i, &quit_i]).build() {
+                            builder = builder.menu(&menu);
+                        }
+                    }
+                }
+            }
+            
+            let _ = builder
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "quit" => std::process::exit(0),
+                    "capture" => {
+                        if let Some(window) = app.get_webview_window("control-panel") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "settings" => {
+                        if let Some(window) = app.get_webview_window("settings") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .build(&app_clone);
+        });
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_scrolling_capture(state: State<'_, RecordingState>, app_state: State<'_, AppState>) -> Result<(), String> {
+    state.is_recording.store(false, Ordering::SeqCst);
+    
+    // Give thread a moment to finish its last capture
+    thread::sleep(Duration::from_millis(50));
+
+    let frames = {
+        let mut f = state.frames.lock().unwrap();
+        let collected = f.clone();
+        f.clear();
+        collected
+    };
+    
+    
+    log_debug(format!("stop_scrolling_capture called. Frames collected: {}", frames.len()));
+
+    if frames.is_empty() {
+        log_debug("No frames collected!".to_string());
+        return Ok(());
+    }
+
+    log_debug("Starting stitcher...".to_string());
+    let stitched_opt = stitcher::stitch_frames(frames);
+    if stitched_opt.is_none() {
+        log_debug("Stitcher returned None!".to_string());
+        return Err("Failed to stitch frames".to_string());
+    }
+    let stitched = stitched_opt.unwrap();
+    log_debug("Stitcher succeeded!".to_string());
+
+    let width = stitched.width();
+    let height = stitched.height();
+    let rgba = stitched.into_raw();
+
+    let mut buf = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new_with_quality(&mut buf, image::codecs::png::CompressionType::Fast, image::codecs::png::FilterType::NoFilter);
+    encoder.write_image(&rgba, width, height, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())?;
+    
+    *app_state.image_buffer.lock().unwrap() = Some(buf);
+
+    Ok(())
+}
+
+#[tauri::command]
+fn is_scrolling_active(state: State<'_, RecordingState>) -> bool {
+    state.is_recording.load(Ordering::SeqCst)
+}
+
+static DEBUG_LOGS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn set_debug_logs_enabled(enabled: bool) {
+    DEBUG_LOGS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn log_debug(message: String) {
+    if !DEBUG_LOGS_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    let log_path = std::path::PathBuf::from("/tmp/specture-debug.txt");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+        let _ = writeln!(file, "[DEBUG] {}", message);
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_macos_permissions::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--silently"]),
+        ))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let shortcut_str = shortcut.into_string();
+                        let _ = app.emit("global-shortcut-triggered", shortcut_str);
+                    }
+                })
+                .build()
+        )
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            let quit_i = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let capture_i = MenuItemBuilder::with_id("capture", "Take Screenshot").build(app)?;
+            let settings_i = MenuItemBuilder::with_id("settings", "Settings...").build(app)?;
+            let menu = MenuBuilder::new(app).items(&[&capture_i, &settings_i, &quit_i]).build()?;
+
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/gray_icon.png")).expect("Failed to load gray_icon.png");
+
+            let _tray = TrayIconBuilder::with_id("main_tray")
+                .icon(tray_icon)
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "quit" => {
+                        std::process::exit(0);
+                    }
+                    "capture" => {
+                        if let Some(window) = app.get_webview_window("control-panel") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "settings" => {
+                        if let Some(window) = app.get_webview_window("settings") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "stop_recording" => {
+                        let state = app.state::<RecordingState>();
+                        if state.is_recording.load(Ordering::SeqCst) {
+                            state.is_recording.store(false, Ordering::SeqCst);
+                            let _ = app.emit("scrolling-stopped", ());
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    let app = tray.app_handle();
+                    
+                    let event_name = match event {
+                        tauri::tray::TrayIconEvent::Click { .. } => "Click",
+                        tauri::tray::TrayIconEvent::DoubleClick { .. } => "DoubleClick",
+                        tauri::tray::TrayIconEvent::Enter { .. } => "Enter",
+                        tauri::tray::TrayIconEvent::Leave { .. } => "Leave",
+                        _ => "Other",
+                    };
+                    
+                    log_debug(format!("Tray event received: {}", event_name));
+
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        let state = app.state::<RecordingState>();
+                        if state.is_recording.load(Ordering::SeqCst) {
+                            state.is_recording.store(false, Ordering::SeqCst);
+                            let _ = app.emit("scrolling-stopped", ());
+                        }
+                    }
+                })
+                .build(app)?;
+            
+            Ok(())
+        })
+        .manage(AppState {
+            image_buffer: Mutex::new(None),
+        })
+        .manage(RecordingState::default())
+        .invoke_handler(tauri::generate_handler![
+            take_screenshot,
+            get_image_buffer,
+            start_scrolling_capture,
+            stop_scrolling_capture,
+            is_scrolling_active,
+            register_shortcuts,
+            log_debug,
+            set_debug_logs_enabled
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

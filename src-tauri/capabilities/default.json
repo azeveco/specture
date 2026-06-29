@@ -1,0 +1,33 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main", "control-panel", "region-selector", "settings", "stop-recording"],
+  "permissions": [
+    "autostart:default",
+    "core:default",
+    "opener:default",
+    "store:default",
+    "dialog:default",
+    "fs:default",
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$PICTURE/**" }, { "path": "$DOCUMENT/**" }, { "path": "$DESKTOP/**" }, { "path": "**" }]
+    },
+    "fs:allow-download-write",
+    "fs:allow-desktop-write",
+    "fs:allow-picture-write",
+    "fs:allow-document-write",
+    "fs:allow-home-write",
+    "global-shortcut:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-center",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "macos-permissions:default",
+    "os:default"
+  ]
+}
