@@ -10,6 +10,7 @@ import { join, downloadDir } from "@tauri-apps/api/path";
 import Settings from "./Settings";
 import { loadSettings } from "./store";
 import React, { ErrorInfo } from 'react';
+import { Square, Circle, ArrowRight, Pen, Droplet, Type } from 'lucide-react';
 import "./App.css";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
@@ -39,7 +40,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 // ----------------------------------------------------
 // Types
 // ----------------------------------------------------
-type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | null;
+type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | null;
 type Point = { x: number; y: number };
 
 interface Annotation {
@@ -48,6 +49,9 @@ interface Annotation {
   lineWidth: number;
   points: Point[]; 
   rect?: { x: number; y: number; w: number; h: number }; 
+  text?: string;
+  fontFamily?: string;
+  fontSize?: number;
 }
 
 // ----------------------------------------------------
@@ -559,19 +563,68 @@ function RegionSelector() {
 // ----------------------------------------------------
 // Editor Window (Main)
 // ----------------------------------------------------
+// Componente de seleção de tamanho da fonte (Combobox)
+function FontSizeSelector({ value, onChange }: { value: number, onChange: (v: number) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(value.toString());
+  const options = [8, 10, 12, 14, 16, 20, 24, 32, 48, 54, 72];
+  
+  useEffect(() => { setInputValue(value.toString()); }, [value]);
+
+  return (
+    <div className="relative flex items-center">
+      <input 
+        type="text" 
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onBlur={() => {
+           const val = parseInt(inputValue);
+           if (!isNaN(val) && val > 0) onChange(val);
+           else setInputValue(value.toString());
+           setTimeout(() => setIsOpen(false), 200);
+        }}
+        onFocus={() => setIsOpen(true)}
+        className="w-14 bg-navy-700 text-white border border-navy-600 rounded-md px-2 py-1 text-sm outline-none focus:border-indigo-500"
+      />
+      {isOpen && (
+        <div className="absolute top-full mt-1 w-full bg-navy-800 border border-navy-600 rounded-md shadow-lg z-50 max-h-40 overflow-y-auto custom-scrollbar">
+          {options.map(opt => (
+            <div 
+              key={opt} 
+              className="px-2 py-1 hover:bg-indigo-600 cursor-pointer text-sm text-white"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setInputValue(opt.toString());
+                onChange(opt);
+                setIsOpen(false);
+              }}
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Editor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [baseImage, setBaseImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [redoStack, setRedoStack] = useState<Annotation[]>([]);
-  const [currentTool, setCurrentTool] = useState<Tool>("rect");
+  const [currentTool, setCurrentTool] = useState<Tool | null>(null);
   const [currentColor, setCurrentColor] = useState<string>("#ef4444"); 
   const [lineWidth, setLineWidth] = useState<number>(4);
+  const [fontFamily, setFontFamily] = useState<string>("Inter");
+  const [fontSize, setFontSize] = useState<number>(24);
+  const [activeText, setActiveText] = useState<{ x: number, y: number, clientX: number, clientY: number, text: string } | null>(null);
   
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentAnnotation, setCurrentAnnotation] = useState<Annotation | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState<{width: number, height: number} | null>(null);
+  const isCancellingText = useRef(false);
 
   useEffect(() => {
     const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
@@ -687,7 +740,7 @@ function Editor() {
           temp.width = dw;
           temp.height = dh;
           const tCtx = temp.getContext("2d");
-          if (tCtx) {
+          if (tCtx && baseImage instanceof HTMLImageElement) {
             tCtx.drawImage(baseImage, x, y, w, h, 0, 0, dw, dh);
             
             ctx.save();
@@ -731,6 +784,14 @@ function Editor() {
          
          ctx.fillStyle = ann.color;
          ctx.fill();
+      } else if (ann.tool === "text" && ann.text) {
+          ctx.fillStyle = ann.color;
+          ctx.font = `${ann.fontSize}px ${ann.fontFamily}`;
+          ctx.textBaseline = "top";
+          const lines = ann.text.split('\n');
+          lines.forEach((line, i) => {
+            ctx.fillText(line, ann.points[0].x, ann.points[0].y + (i * (ann.fontSize || 24) * 1.2));
+          });
       }
     };
 
@@ -762,9 +823,33 @@ function Editor() {
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (!baseImage) return;
-    setIsDrawing(true);
+    
+    if (currentTool === "text") {
+      if (activeText) {
+        return;
+      }
+      e.preventDefault();
+      
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const cssX = e.clientX - rect.left;
+      const cssY = e.clientY - rect.top;
+      
+      const pos = {
+        x: cssX * scaleX,
+        y: cssY * scaleY
+      };
+      
+      setActiveText({ x: pos.x, y: pos.y, clientX: e.clientX, clientY: e.clientY, text: "" });
+      return;
+    }
+    
     const pos = getMousePos(e);
-    setCurrentAnnotation({ tool: currentTool, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }});
+    setIsDrawing(true);
+    setCurrentAnnotation({ tool: currentTool!, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }});
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -916,6 +1001,11 @@ function Editor() {
 
       if (e.key === 'Escape') {
         e.preventDefault();
+        if (activeText) {
+          isCancellingText.current = true;
+          setActiveText(null);
+          return;
+        }
         if (isDrawing) {
           setIsDrawing(false);
           setCurrentAnnotation(null);
@@ -936,6 +1026,8 @@ function Editor() {
         setCurrentTool("freehand");
       } else if (e.key === '5') {
         setCurrentTool("blur");
+      } else if (e.key === '6') {
+        setCurrentTool("text");
       } else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
         if (e.shiftKey) {
           handleRedo();
@@ -954,7 +1046,7 @@ function Editor() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing]);
+  }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing, activeText]);
 
   return (
     <main className="w-screen h-screen bg-navy-900 overflow-hidden relative">
@@ -964,32 +1056,70 @@ function Editor() {
         <>
           <header className="absolute top-0 left-0 right-0 h-16 px-6 flex items-center justify-between border-b border-navy-700 bg-navy-800 shadow-sm z-10">
             <div className="flex gap-2">
-              {(["rect", "circle", "arrow", "freehand", "blur"] as Tool[]).map((t, idx) => (
+              {[
+                { id: "rect", icon: <Square size={18} /> },
+                { id: "circle", icon: <Circle size={18} /> },
+                { id: "arrow", icon: <ArrowRight size={18} /> },
+                { id: "freehand", icon: <Pen size={18} /> },
+                { id: "blur", icon: <Droplet size={18} /> },
+                { id: "text", icon: <Type size={18} /> }
+              ].map((t, idx) => (
                 <button 
-                  key={t}
-                  onClick={() => setCurrentTool(t)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 relative group ${currentTool === t ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-navy-600 text-indigo-200 hover:text-white'}`}
-                  title={`Shortcut: ${idx + 1}`}
+                  key={t.id}
+                  onMouseDown={() => {
+                    if (activeText && t.id !== "text") {
+                      isCancellingText.current = true;
+                    }
+                  }}
+                  onClick={() => setCurrentTool(t.id as Tool)}
+                  className={`p-2 rounded-md transition-colors duration-200 relative group flex items-center justify-center ${currentTool === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-navy-600 text-indigo-200 hover:text-white'}`}
                 >
-                  {t ? t.charAt(0).toUpperCase() + t.slice(1) : ''}
-                  <span className="absolute -top-1 -right-1 bg-navy-900 text-navy-400 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-navy-700 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {t.icon}
+                  
+                  <span className="absolute -top-1 -right-1 bg-navy-900 text-navy-400 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-navy-700 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                     {idx + 1}
                   </span>
+                  
+                  {/* Tooltip centralizado abaixo (apenas nome) */}
+                  <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
+                    {t.id.charAt(0).toUpperCase() + t.id.slice(1)}
+                  </div>
                 </button>
               ))}
             </div>
             
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 mr-4">
-                <span className="text-navy-300 text-xs font-medium">Size:</span>
-                <input 
-                  type="range" 
-                  min="2" max="30" 
-                  value={lineWidth}
-                  onChange={e => setLineWidth(Number(e.target.value))}
-                  className="w-24 accent-indigo-500"
-                />
-              </div>
+              {currentTool === "text" ? (
+                <div className="flex items-center gap-3 mr-4 border-r border-navy-600 pr-4">
+                  <select
+                    value={fontFamily}
+                    onChange={(e) => setFontFamily(e.target.value)}
+                    className="bg-navy-700 text-white border border-navy-600 rounded-md px-2 py-1 text-sm outline-none focus:border-indigo-500"
+                  >
+                    <option value="Inter">Inter</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Comic Sans MS">Comic Sans MS</option>
+                  </select>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-navy-300 text-xs font-medium">Size:</span>
+                    <FontSizeSelector value={fontSize} onChange={setFontSize} />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mr-4 border-r border-navy-600 pr-4">
+                  <span className="text-navy-300 text-xs font-medium">Thickness:</span>
+                  <input 
+                    type="range" 
+                    min="2" max="30" 
+                    value={lineWidth}
+                    onChange={e => setLineWidth(Number(e.target.value))}
+                    className="w-24 accent-indigo-500"
+                  />
+                </div>
+              )}
               
               <span className="text-navy-300 text-xs font-medium">Color:</span>
               <input 
@@ -1041,6 +1171,57 @@ function Editor() {
                   display: 'block'
                 }}
               />
+          
+              {activeText && (
+                <textarea
+                  autoFocus
+                  value={activeText.text}
+                  onChange={(e) => setActiveText({ ...activeText, text: e.target.value })}
+                  onBlur={() => {
+                    if (isCancellingText.current) {
+                      isCancellingText.current = false;
+                      setActiveText(null);
+                      return;
+                    }
+                    if (activeText.text.trim()) {
+                      setAnnotations(prev => [...prev, {
+                        tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+                      }]);
+                      setRedoStack([]);
+                    }
+                    setActiveText(null);
+                    setCurrentTool(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      isCancellingText.current = true;
+                      setActiveText(null);
+                      setCurrentTool(null);
+                    }
+                  }}
+                  style={{
+                    position: 'fixed',
+                    left: activeText.clientX,
+                    top: activeText.clientY,
+                    color: currentColor,
+                    fontFamily: fontFamily,
+                    fontSize: `${fontSize / (canvasRef.current ? canvasRef.current.width / canvasRef.current.getBoundingClientRect().width : 1)}px`,
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    padding: 0,
+                    margin: 0,
+                    lineHeight: 1.2,
+                    whiteSpace: 'pre',
+                    overflow: 'hidden',
+                    resize: 'none',
+                    minWidth: '200px',
+                    minHeight: '100px',
+                    zIndex: 50
+                  }}
+                />
+              )}
             </div>
           </div>
         </>
