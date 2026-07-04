@@ -706,18 +706,31 @@ function Editor() {
       } else if (ann.tool === "arrow" && ann.points.length >= 2) {
          const start = ann.points[0];
          const end = ann.points[ann.points.length - 1];
+         
+         const headlen = Math.max(20, ann.lineWidth * 4);
+         const angle = Math.atan2(end.y - start.y, end.x - start.x);
+         
+         // Linha principal
+         const lineEndX = end.x - headlen * Math.cos(angle) * 0.8;
+         const lineEndY = end.y - headlen * Math.sin(angle) * 0.8;
+
+         ctx.lineCap = "butt";
+         ctx.lineJoin = "miter";
+         
          ctx.beginPath();
          ctx.moveTo(start.x, start.y);
-         ctx.lineTo(end.x, end.y);
+         ctx.lineTo(lineEndX, lineEndY);
          ctx.stroke();
-         const headlen = 15;
-         const angle = Math.atan2(end.y - start.y, end.x - start.x);
+         
+         // Cabeça da seta (triângulo preenchido)
          ctx.beginPath();
          ctx.moveTo(end.x, end.y);
          ctx.lineTo(end.x - headlen * Math.cos(angle - Math.PI / 6), end.y - headlen * Math.sin(angle - Math.PI / 6));
-         ctx.moveTo(end.x, end.y);
          ctx.lineTo(end.x - headlen * Math.cos(angle + Math.PI / 6), end.y - headlen * Math.sin(angle + Math.PI / 6));
-         ctx.stroke();
+         ctx.closePath();
+         
+         ctx.fillStyle = ann.color;
+         ctx.fill();
       }
     };
 
