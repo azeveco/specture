@@ -22,6 +22,7 @@ export interface SpectureSettings {
   maxRecordingDuration: number;
   enableDebugLogs: boolean;
   colorSpaceMode: "auto" | "srgb" | "display-p3";
+  language: string;
 }
 
 export const defaultSettings: SpectureSettings = {
@@ -38,6 +39,7 @@ export const defaultSettings: SpectureSettings = {
   maxRecordingDuration: 30,
   enableDebugLogs: false,
   colorSpaceMode: "auto",
+  language: "en",
 };
 
 export async function loadSettings(): Promise<SpectureSettings> {

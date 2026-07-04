@@ -41,6 +41,24 @@ struct AppState {
     image_buffer: Mutex<Option<Vec<u8>>>,
 }
 
+struct TrayStrings {
+    capture_text: String,
+    settings_text: String,
+    quit_text: String,
+}
+
+struct TrayState(Mutex<TrayStrings>);
+
+impl Default for TrayState {
+    fn default() -> Self {
+        Self(Mutex::new(TrayStrings {
+            capture_text: "Take Screenshot".into(),
+            settings_text: "Settings...".into(),
+            quit_text: "Quit".into(),
+        }))
+    }
+}
+
 struct RecordingState {
     frames: Arc<Mutex<Vec<image::RgbaImage>>>,
     is_recording: Arc<AtomicBool>,
@@ -162,10 +180,16 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                 .icon_as_template(true)
                 .tooltip("Specture");
                 
+            let (capture_t, settings_t, quit_t) = {
+                let s = app_clone.state::<TrayState>();
+                let lock = s.0.lock().unwrap();
+                (lock.capture_text.clone(), lock.settings_text.clone(), lock.quit_text.clone())
+            };
+                
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
-            if let Ok(quit_i) = MenuItemBuilder::with_id("quit", "Quit").build(&app_clone) {
-                if let Ok(capture_i) = MenuItemBuilder::with_id("capture", "Take Screenshot").build(&app_clone) {
-                    if let Ok(settings_i) = MenuItemBuilder::with_id("settings", "Settings...").build(&app_clone) {
+            if let Ok(quit_i) = MenuItemBuilder::with_id("quit", quit_t).build(&app_clone) {
+                if let Ok(capture_i) = MenuItemBuilder::with_id("capture", capture_t).build(&app_clone) {
+                    if let Ok(settings_i) = MenuItemBuilder::with_id("settings", settings_t).build(&app_clone) {
                         if let Ok(menu) = MenuBuilder::new(&app_clone).items(&[&capture_i, &settings_i, &quit_i]).build() {
                             builder = builder.menu(&menu);
                         }
@@ -393,6 +417,29 @@ fn capture_window(id: u32, state: State<'_, AppState>) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn update_tray_menu(app: tauri::AppHandle, state: State<'_, TrayState>, capture_text: String, settings_text: String, quit_text: String) -> Result<(), String> {
+    {
+        let mut s = state.0.lock().unwrap();
+        s.capture_text = capture_text.clone();
+        s.settings_text = settings_text.clone();
+        s.quit_text = quit_text.clone();
+    }
+    
+    if let Some(tray) = app.tray_by_id("main_tray") {
+        let menu = tauri::menu::MenuBuilder::new(&app)
+            .items(&[
+                &tauri::menu::MenuItemBuilder::with_id("capture", capture_text).build(&app).unwrap(),
+                &tauri::menu::MenuItemBuilder::with_id("settings", settings_text).build(&app).unwrap(),
+                &tauri::menu::MenuItemBuilder::with_id("quit", quit_text).build(&app).unwrap(),
+            ])
+            .build()
+            .map_err(|e| e.to_string())?;
+        let _ = tray.set_menu(Some(menu));
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     Builder::default()
@@ -484,6 +531,7 @@ pub fn run() {
             image_buffer: Mutex::new(None),
         })
         .manage(RecordingState::default())
+        .manage(TrayState::default())
         .invoke_handler(tauri::generate_handler![
             take_screenshot,
             get_image_buffer,
@@ -496,7 +544,8 @@ pub fn run() {
             store_cropped_image,
             get_windows,
             capture_window,
-            activate_app
+            activate_app,
+            update_tray_menu
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

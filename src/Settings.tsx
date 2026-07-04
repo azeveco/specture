@@ -4,15 +4,18 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { getVersion } from '@tauri-apps/api/app';
 import { loadSettings, saveSettings, SpectureSettings, defaultSettings } from './store';
+import { useTranslation } from 'react-i18next';
 
 export default function Settings() {
   const [settings, setSettingsState] = useState<SpectureSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState<string>("");
+  const { t, i18n } = useTranslation();
 
   useEffect(() => {
     loadSettings().then(s => {
       setSettingsState(s);
+      i18n.changeLanguage(s.language || 'en');
       setLoading(false);
     });
 
@@ -41,6 +44,7 @@ export default function Settings() {
         maxRecordingDuration: 30,
         enableDebugLogs: false,
         colorSpaceMode: "auto",
+        language: "en",
       };
       setSettingsState(resetSettings);
       await saveSettings(resetSettings);
@@ -106,46 +110,66 @@ export default function Settings() {
     }
   };
 
-  if (loading) return <div className="h-screen w-screen bg-navy-900 flex items-center justify-center text-white">Loading...</div>;
+  if (loading) return <div className="h-screen w-screen bg-navy-900 flex items-center justify-center text-white">{t('settings.loading')}</div>;
 
   return (
     <div className="h-screen w-screen bg-navy-900 flex flex-col p-6 overflow-auto custom-scrollbar">
-      <h1 className="text-2xl font-bold text-white mb-6">Settings</h1>
+      <h1 className="text-2xl font-bold text-white mb-6">{t('settings.title')}</h1>
       
       <div className="space-y-6 pb-6">
+        {/* Language Selection */}
+        <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <span>🌐</span> {t('settings.language')}
+          </h2>
+          <select 
+            value={settings.language || "en"}
+            onChange={(e) => {
+              const lang = e.target.value;
+              updateSetting('language', lang);
+              i18n.changeLanguage(lang);
+            }}
+            className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+          >
+            <option value="en">English</option>
+            <option value="pt-BR">Português (Brasil)</option>
+            <option value="es">Español</option>
+          </select>
+        </section>
+
         {/* Global Shortcuts */}
         <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>⌨️</span> Global Shortcuts
+            <span>⌨️</span> {t('settings.global_shortcuts')}
           </h2>
           <div className="space-y-4">
             <ShortcutInput 
-              label="Open Control Panel" 
+              label={t('settings.open_control_panel')} 
               value={settings.shortcutControlPanel}
               onChange={(val) => updateSetting('shortcutControlPanel', val)}
             />
             <ShortcutInput 
-              label="Capture Full Screen" 
+              label={t('settings.capture_full_screen')} 
               value={settings.shortcutFullScreen}
               onChange={(val) => updateSetting('shortcutFullScreen', val)}
             />
             <ShortcutInput 
-              label="Capture Region" 
+              label={t('settings.capture_region')} 
               value={settings.shortcutRegion}
               onChange={(val) => updateSetting('shortcutRegion', val)}
             />
             <ShortcutInput 
-              label="Capture Window" 
+              label={t('settings.capture_window')} 
               value={settings.shortcutWindow}
               onChange={(val) => updateSetting('shortcutWindow', val)}
             />
             <ShortcutInput 
-              label="Scrolling Capture" 
+              label={t('settings.scrolling_capture')} 
               value={settings.shortcutScrolling}
               onChange={(val) => updateSetting('shortcutScrolling', val)}
             />
             <p className="text-xs text-navy-300 mt-2">
-              Valid modifiers: CommandOrControl, Shift, Alt, Super. E.g., <code>CommandOrControl+Shift+5</code>
+              {t('settings.shortcut_modifiers_hint')}
             </p>
           </div>
           
@@ -170,10 +194,10 @@ export default function Settings() {
                 }}
                 className="w-5 h-5 accent-emerald-500 bg-navy-900 border-navy-600 rounded cursor-pointer"
               />
-              <span className="text-white text-sm font-medium">Start Specture automatically at login</span>
+              <span className="text-white text-sm font-medium">{t('settings.start_at_login')}</span>
             </label>
             <p className="text-xs text-navy-400 mt-1 ml-8">
-              Starts silently in the background so it's ready when you need it.
+              {t('settings.start_at_login_hint')}
             </p>
           </div>
         </section>
@@ -181,7 +205,7 @@ export default function Settings() {
         {/* Save Options */}
         <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>💾</span> Save Options
+            <span>💾</span> {t('settings.save_options')}
           </h2>
 
           <div className="space-y-4">
@@ -192,37 +216,37 @@ export default function Settings() {
                 onChange={(e) => updateSetting('saveOnCopy', e.target.checked)}
                 className="w-5 h-5 accent-emerald-500 bg-navy-900 border-navy-600 rounded cursor-pointer"
               />
-              <span className="text-white text-sm">Save automatically when copying to clipboard</span>
+              <span className="text-white text-sm">{t('settings.save_on_copy')}</span>
             </label>
 
             <div>
-              <label className="block text-sm font-medium text-navy-200 mb-1">Default Save Location</label>
+              <label className="block text-sm font-medium text-navy-200 mb-1">{t('settings.default_save_location')}</label>
               <div className="flex gap-2">
                 <input 
                   type="text" 
                   readOnly 
                   value={settings.defaultSaveLocation} 
-                  placeholder="Select a folder (leave empty to prompt)"
+                  placeholder={t('settings.select_folder_placeholder')}
                   className="flex-1 bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
                 />
                 <button 
                   onClick={handleSelectFolder}
                   className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded text-sm transition-colors cursor-pointer"
                 >
-                  Browse...
+                  {t('settings.browse_button')}
                 </button>
                 <button 
                   onClick={() => updateSetting('defaultSaveLocation', '')}
                   className="px-4 py-2 bg-red-900/30 hover:bg-red-900/60 text-red-300 rounded text-sm transition-colors cursor-pointer border border-red-900/50"
-                  title="Clear default folder"
+                  title={t('settings.clear_folder_title')}
                 >
-                  Clear
+                  {t('settings.clear_button')}
                 </button>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-navy-200 mb-1">Naming Convention</label>
+              <label className="block text-sm font-medium text-navy-200 mb-1">{t('settings.naming_convention')}</label>
               <input 
                 type="text" 
                 value={settings.namingConvention}
@@ -231,30 +255,30 @@ export default function Settings() {
                 className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
               />
               <p className="text-xs text-navy-400 mt-1">
-                Available tags: <code>{"{YYYY-MM-DD}"}</code>, <code>{"{HH-MM-SS}"}</code>, <code>{"{TIMESTAMP}"}</code>
+                {t('settings.available_tags')} <code>{"{YYYY-MM-DD}"}</code>, <code>{"{HH-MM-SS}"}</code>, <code>{"{TIMESTAMP}"}</code>
               </p>
             </div>
             
             <div className="pt-4 border-t border-navy-700">
-              <label className="block text-sm font-medium text-navy-200 mb-2">Stop Recording Button Position</label>
+              <label className="block text-sm font-medium text-navy-200 mb-2">{t('settings.stop_button_position')}</label>
               <select 
                 value={settings.stopButtonPosition || "hidden"}
                 onChange={(e) => updateSetting('stopButtonPosition', e.target.value as any)}
                 className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
               >
-                <option value="top">Top</option>
-                <option value="bottom">Bottom</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
-                <option value="hidden">Hidden (Use global shortcut or Tray icon to stop)</option>
+                <option value="top">{t('settings.position_top')}</option>
+                <option value="bottom">{t('settings.position_bottom')}</option>
+                <option value="left">{t('settings.position_left')}</option>
+                <option value="right">{t('settings.position_right')}</option>
+                <option value="hidden">{t('settings.position_hidden')}</option>
               </select>
               <p className="text-xs text-navy-400 mt-1">
-                Where the stop button will appear during scrolling capture. If Hidden, press your scrolling capture shortcut or click the tray icon to stop.
+                {t('settings.stop_button_hint')}
               </p>
             </div>
             
             <div className="pt-4 border-t border-navy-700">
-              <label className="block text-sm font-medium text-navy-200 mb-2">Max Recording Duration (seconds)</label>
+              <label className="block text-sm font-medium text-navy-200 mb-2">{t('settings.max_duration')}</label>
               <input 
                 type="number" 
                 min="1"
@@ -264,7 +288,7 @@ export default function Settings() {
                 className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
               />
               <p className="text-xs text-navy-400 mt-1">
-                The maximum time the app will record during a scrolling capture before stopping automatically to prevent memory issues.
+                {t('settings.max_duration_hint')}
               </p>
             </div>
             
@@ -286,9 +310,9 @@ export default function Settings() {
                   <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableDebugLogs ? 'translate-x-4' : ''}`}></div>
                 </div>
                 <div className="text-sm font-medium text-navy-200">
-                  Enable Debug Logs
+                  {t('settings.enable_debug_logs')}
                   <p className="text-xs text-navy-400 font-normal mt-1">
-                    Generates diagnostic logs in /tmp/specture-debug.txt to help troubleshoot issues. Keep disabled for best performance.
+                    {t('settings.enable_debug_logs_hint')}
                   </p>
                 </div>
               </label>
@@ -298,22 +322,22 @@ export default function Settings() {
 
         <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm mt-6">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>⚙️</span> Advanced
+            <span>⚙️</span> {t('settings.advanced_options')}
           </h2>
 
           <div className="mb-6">
-            <label className="block text-sm font-medium text-navy-200 mb-2">Color Space Mode</label>
+            <label className="block text-sm font-medium text-navy-200 mb-2">{t('settings.color_space_mode')}</label>
             <select 
               value={settings.colorSpaceMode || "auto"}
               onChange={(e) => updateSetting('colorSpaceMode', e.target.value as any)}
               className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
             >
-              <option value="auto">Auto (Mac: P3, Win/Linux: sRGB)</option>
-              <option value="srgb">Manual: sRGB (Standard Web/Windows)</option>
-              <option value="display-p3">Manual: Display P3 (Vibrant/Mac)</option>
+              <option value="auto">{t('settings.color_space_auto')}</option>
+              <option value="srgb">{t('settings.color_space_srgb')}</option>
+              <option value="display-p3">{t('settings.color_space_p3')}</option>
             </select>
             <p className="text-xs text-navy-400 mt-1">
-              Determines how screenshot pixels are interpreted. If colors look washed out or overly vibrant, try changing this.
+              {t('settings.color_space_hint')}
             </p>
           </div>
 
@@ -322,20 +346,20 @@ export default function Settings() {
               className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded text-sm transition-colors cursor-pointer"
               onClick={handleImport}
             >
-              Import Settings
+              {t('settings.import_settings')}
             </button>
             <button 
               className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded text-sm transition-colors cursor-pointer"
               onClick={handleExport}
             >
-              Export Settings
+              {t('settings.export_settings')}
             </button>
 
             <button 
               className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm transition-colors cursor-pointer"
               onClick={handleResetSettings}
             >
-              Reset to Defaults
+              {t('settings.reset_to_defaults')}
             </button>
           </div>
         </section>
@@ -349,6 +373,7 @@ export default function Settings() {
 }
 
 function ShortcutInput({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) {
+  const { t } = useTranslation();
   const [isRecording, setIsRecording] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -406,7 +431,7 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
   };
 
   const formatDisplay = (val: string) => {
-    if (!val) return "Unassigned";
+    if (!val) return t('settings.unassigned');
     let formatted = val;
     // Format for macOS if applicable
     formatted = formatted.replace("CommandOrControl", "Command");
@@ -421,7 +446,7 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
         ref={inputRef}
         type="text" 
         readOnly
-        value={isRecording ? "Listening..." : formatDisplay(value)}
+        value={isRecording ? t('settings.listening') : formatDisplay(value)}
         onFocus={startRecording}
         onBlur={() => setIsRecording(false)}
         onKeyDown={handleKeyDown}
@@ -430,7 +455,7 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
             ? 'border-indigo-500 text-indigo-300 shadow-[0_0_8px_rgba(99,102,241,0.5)]' 
             : 'border-navy-700 text-white hover:border-navy-600'
         }`}
-        placeholder="Click to set shortcut"
+        placeholder={t('settings.click_to_set')}
       />
     </div>
   );

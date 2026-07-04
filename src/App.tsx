@@ -9,7 +9,9 @@ import { message } from "@tauri-apps/plugin-dialog";
 import { join, downloadDir } from "@tauri-apps/api/path";
 import Settings from "./Settings";
 import { loadSettings } from "./store";
+import i18n from "./i18n";
 import React, { ErrorInfo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Square, Circle, ArrowRight, Pen, Droplet, Type } from 'lucide-react';
 import "./App.css";
 
@@ -69,6 +71,7 @@ interface Annotation {
 // Control Panel Window
 // ----------------------------------------------------
 function ControlPanel() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isScrollingSetup, setIsScrollingSetup] = useState(false);
@@ -135,7 +138,7 @@ function ControlPanel() {
         </div>
       )}
       <h2 className="text-white font-semibold mb-4 opacity-80 mt-2">
-        {isScrollingSetup ? "Select Scrolling Area" : "Select Capture Mode"}
+        {isScrollingSetup ? t('settings.scrolling_capture') : t('settings.open_control_panel')}
       </h2>
       <div className="flex gap-4">
         <button 
@@ -144,7 +147,7 @@ function ControlPanel() {
           className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
         >
           <span className="text-2xl">🖥️</span>
-          <span className="text-white font-medium text-sm">Full Screen</span>
+          <span className="text-white font-medium text-sm">{t('settings.capture_full_screen')}</span>
         </button>
         <button 
           onClick={() => handleCapture("region")}
@@ -152,7 +155,7 @@ function ControlPanel() {
           className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
         >
           <span className="text-2xl">✂️</span>
-          <span className="text-white font-medium text-sm">Region</span>
+          <span className="text-white font-medium text-sm">{t('settings.capture_region')}</span>
         </button>
         <button 
           onClick={() => handleCapture("window")}
@@ -160,7 +163,7 @@ function ControlPanel() {
           className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
         >
           <span className="text-2xl">🪟</span>
-          <span className="text-white font-medium text-sm">Window</span>
+          <span className="text-white font-medium text-sm">{t('app.window')}</span>
         </button>
       </div>
     </div>
@@ -171,6 +174,7 @@ function ControlPanel() {
 // Region Selector Window
 // ----------------------------------------------------
 function RegionSelector() {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [baseImage, setBaseImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const [startPos, setStartPos] = useState<Point | null>(null);
@@ -286,7 +290,7 @@ function RegionSelector() {
           }
         };
         img.onerror = () => {
-          setErrorMsg("Failed to load image from backend.");
+          setErrorMsg(t('app.failed_to_load'));
           URL.revokeObjectURL(url);
         };
         img.src = url;
@@ -640,6 +644,7 @@ function FontSizeSelector({ value, onChange }: { value: number, onChange: (v: nu
 }
 
 function Editor() {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [baseImage, setBaseImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -756,7 +761,7 @@ function Editor() {
             URL.revokeObjectURL(url);
           };
           img.onerror = () => {
-            setErrorMsg("Failed to load image from backend.");
+            setErrorMsg(t('app.failed_to_load'));
             URL.revokeObjectURL(url);
           };
           img.src = url;
@@ -1158,18 +1163,18 @@ function Editor() {
                 { id: "freehand", icon: <Pen size={18} /> },
                 { id: "blur", icon: <Droplet size={18} /> },
                 { id: "text", icon: <Type size={18} /> }
-              ].map((t, idx) => (
+              ].map((toolObj, idx) => (
                 <button 
-                  key={t.id}
+                  key={toolObj.id}
                   onMouseDown={() => {
-                    if (activeText && t.id !== "text") {
+                    if (activeText && toolObj.id !== "text") {
                       isCancellingText.current = true;
                     }
                   }}
-                  onClick={() => setCurrentTool(t.id as Tool)}
-                  className={`p-2 rounded-md transition-colors duration-200 relative group flex items-center justify-center ${currentTool === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-navy-600 text-indigo-200 hover:text-white'}`}
+                  onClick={() => setCurrentTool(toolObj.id as Tool)}
+                  className={`p-2 rounded-md transition-colors duration-200 relative group flex items-center justify-center ${currentTool === toolObj.id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-navy-600 text-indigo-200 hover:text-white'}`}
                 >
-                  {t.icon}
+                  {toolObj.icon}
                   
                   <span className="absolute -top-1 -right-1 bg-navy-900 text-navy-400 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-navy-700 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                     {idx + 1}
@@ -1177,7 +1182,7 @@ function Editor() {
                   
                   {/* Tooltip centralizado abaixo (apenas nome) */}
                   <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
-                    {t.id.charAt(0).toUpperCase() + t.id.slice(1)}
+                    {t(`app.${toolObj.id}`) !== `app.${toolObj.id}` ? t(`app.${toolObj.id}`) : toolObj.id.charAt(0).toUpperCase() + toolObj.id.slice(1)}
                   </div>
                 </button>
               ))}
@@ -1199,13 +1204,13 @@ function Editor() {
                   </select>
                   
                   <div className="flex items-center gap-2">
-                    <span className="text-navy-300 text-xs font-medium">Size:</span>
+                    <span className="text-navy-300 text-xs font-medium">{t('app.font_size')}:</span>
                     <FontSizeSelector value={fontSize} onChange={setFontSize} />
                   </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 mr-4 border-r border-navy-600 pr-4">
-                  <span className="text-navy-300 text-xs font-medium">Thickness:</span>
+                  <span className="text-navy-300 text-xs font-medium">{t('app.thickness')}:</span>
                   <input 
                     type="range" 
                     min="2" max="30" 
@@ -1217,7 +1222,7 @@ function Editor() {
                 </div>
               )}
               
-              <span className="text-navy-300 text-xs font-medium">Color:</span>
+              <span className="text-navy-300 text-xs font-medium">{t('app.color')}:</span>
               <input 
                 ref={colorInputRef}
                 type="color" 
@@ -1346,7 +1351,7 @@ function Editor() {
         <div className="flex-1 flex flex-col items-center justify-center p-8">
            <header className="mb-8 text-center">
              <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight drop-shadow-lg opacity-80">Specture</h1>
-             <p className="text-indigo-400 text-sm font-medium opacity-60">Ready in Background</p>
+             <p className="text-indigo-400 text-sm font-medium opacity-60">{t('app.ready_in_background')}</p>
            </header>
         </div>
       )}
@@ -1390,8 +1395,21 @@ function MainApp() {
         try {
           const settings = await loadSettings();
           
+          if (settings.language) {
+            i18n.changeLanguage(settings.language);
+          } else {
+            i18n.changeLanguage('en');
+          }
+          
           import('@tauri-apps/api/core').then(({ invoke }) => {
             invoke('set_debug_logs_enabled', { enabled: settings.enableDebugLogs }).catch(console.warn);
+            
+            // Update system tray menu language
+            invoke('update_tray_menu', {
+              captureText: i18n.t('settings.capture_region') || 'Take Screenshot',
+              settingsText: i18n.t('settings.title') || 'Settings...',
+              quitText: i18n.t('app.quit') || 'Quit',
+            }).catch(console.warn);
           });
           
           const normalizeShortcut = (sc: string | null) => {
@@ -1559,10 +1577,39 @@ function MainApp() {
       };
       
       applyShortcuts();
-      const unlistenSettings = listen("settings-updated", applyShortcuts);
+      
+      const applyLanguage = async () => {
+         const settings = await loadSettings();
+         if (settings.language) {
+            i18n.changeLanguage(settings.language);
+         } else {
+            i18n.changeLanguage('en');
+         }
+      };
+      
+      const unlistenSettings = listen("settings-updated", () => {
+         applyShortcuts();
+         applyLanguage();
+      });
       
       return () => {
          currentUnlisten();
+         unlistenSettings.then(f => f());
+      };
+    } else {
+      // For all other windows (Control Panel, Region Selector, Editor), ensure language updates dynamically
+      const applyLanguage = async () => {
+         const settings = await loadSettings();
+         if (settings.language) {
+            i18n.changeLanguage(settings.language);
+         } else {
+            i18n.changeLanguage('en');
+         }
+      };
+      
+      applyLanguage();
+      const unlistenSettings = listen("settings-updated", applyLanguage);
+      return () => {
          unlistenSettings.then(f => f());
       };
     }
@@ -1587,6 +1634,7 @@ function MainApp() {
 }
 
 function StopRecording() {
+  const { t } = useTranslation();
   useEffect(() => {
     document.documentElement.style.backgroundColor = "transparent";
     document.body.style.backgroundColor = "transparent";
@@ -1627,7 +1675,7 @@ function StopRecording() {
     <div data-tauri-drag-region className="h-screen w-screen flex items-center justify-center bg-transparent overflow-hidden">
       <button 
         onPointerDown={handleStop}
-        title="Stop Recording"
+        title={t('app.stop')}
         className="w-16 h-16 flex items-center justify-center bg-red-600 hover:bg-red-500 rounded-full shadow-[0_0_15px_rgba(220,38,38,0.7)] border-2 border-red-800 animate-pulse cursor-pointer transition-colors pointer-events-auto"
       >
         <div className="w-5 h-5 bg-white rounded-sm pointer-events-none"></div>
