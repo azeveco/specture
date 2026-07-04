@@ -778,18 +778,41 @@ function Editor() {
       }
       if (prev.tool === "rect" || prev.tool === "blur" || prev.tool === "circle") {
         const startPos = prev.points[0];
+        let diffX = pos.x - startPos.x;
+        let diffY = pos.y - startPos.y;
+
+        if (e.shiftKey) {
+          const size = Math.max(Math.abs(diffX), Math.abs(diffY));
+          diffX = diffX < 0 ? -size : size;
+          diffY = diffY < 0 ? -size : size;
+        }
+
         return {
           ...prev,
           rect: {
-            x: Math.min(startPos.x, pos.x),
-            y: Math.min(startPos.y, pos.y),
-            w: Math.abs(pos.x - startPos.x),
-            h: Math.abs(pos.y - startPos.y)
+            x: diffX < 0 ? startPos.x + diffX : startPos.x,
+            y: diffY < 0 ? startPos.y + diffY : startPos.y,
+            w: Math.abs(diffX),
+            h: Math.abs(diffY)
           }
         };
       }
       if (prev.tool === "arrow") {
-        return { ...prev, points: [prev.points[0], pos] };
+        let finalPos = { ...pos };
+        if (e.shiftKey) {
+          const startPos = prev.points[0];
+          const dx = pos.x - startPos.x;
+          const dy = pos.y - startPos.y;
+          const angle = Math.atan2(dy, dx);
+          // Snap angle to nearest 45 degrees (PI/4)
+          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+          const dist = Math.hypot(dx, dy);
+          finalPos = {
+            x: startPos.x + Math.cos(snappedAngle) * dist,
+            y: startPos.y + Math.sin(snappedAngle) * dist
+          };
+        }
+        return { ...prev, points: [prev.points[0], finalPos] };
       }
       return prev;
     });
