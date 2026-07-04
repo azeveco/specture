@@ -916,6 +916,11 @@ function Editor() {
 
       if (e.key === 'Escape') {
         e.preventDefault();
+        if (isDrawing) {
+          setIsDrawing(false);
+          setCurrentAnnotation(null);
+          return;
+        }
         setCurrentTool(prev => {
           if (prev) return null;
           getCurrentWindow().hide();
@@ -949,7 +954,7 @@ function Editor() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, handleCopy, handleUndo, handleRedo]);
+  }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing]);
 
   return (
     <main className="w-screen h-screen bg-navy-900 overflow-hidden relative">
