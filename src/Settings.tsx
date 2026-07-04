@@ -259,7 +259,17 @@ export default function Settings() {
               </p>
             </div>
             
-            <div className="pt-4 border-t border-navy-700">
+          </div>
+        </section>
+
+        {/* Scrolling Capture Options */}
+        <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm mt-6">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <span>📜</span> {t('settings.scrolling_capture')}
+          </h2>
+
+          <div className="space-y-4">
+            <div>
               <label className="block text-sm font-medium text-navy-200 mb-2">{t('settings.stop_button_position')}</label>
               <select 
                 value={settings.stopButtonPosition || "hidden"}
@@ -291,32 +301,6 @@ export default function Settings() {
                 {t('settings.max_duration_hint')}
               </p>
             </div>
-            
-            <div className="pt-4 border-t border-navy-700">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <div className="relative">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only" 
-                    checked={settings.enableDebugLogs}
-                    onChange={(e) => {
-                      updateSetting('enableDebugLogs', e.target.checked);
-                      import('@tauri-apps/api/core').then(({ invoke }) => {
-                        invoke('set_debug_logs_enabled', { enabled: e.target.checked }).catch(console.warn);
-                      });
-                    }}
-                  />
-                  <div className={`block w-10 h-6 rounded-full transition-colors ${settings.enableDebugLogs ? 'bg-emerald-500' : 'bg-navy-700'}`}></div>
-                  <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableDebugLogs ? 'translate-x-4' : ''}`}></div>
-                </div>
-                <div className="text-sm font-medium text-navy-200">
-                  {t('settings.enable_debug_logs')}
-                  <p className="text-xs text-navy-400 font-normal mt-1">
-                    {t('settings.enable_debug_logs_hint')}
-                  </p>
-                </div>
-              </label>
-            </div>
           </div>
         </section>
 
@@ -339,6 +323,32 @@ export default function Settings() {
             <p className="text-xs text-navy-400 mt-1">
               {t('settings.color_space_hint')}
             </p>
+          </div>
+
+          <div className="pt-4 border-t border-navy-700 mb-6">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div className="relative">
+                <input 
+                  type="checkbox" 
+                  className="sr-only" 
+                  checked={settings.enableDebugLogs}
+                  onChange={(e) => {
+                    updateSetting('enableDebugLogs', e.target.checked);
+                    import('@tauri-apps/api/core').then(({ invoke }) => {
+                      invoke('set_debug_logs_enabled', { enabled: e.target.checked }).catch(console.warn);
+                    });
+                  }}
+                />
+                <div className={`block w-10 h-6 rounded-full transition-colors ${settings.enableDebugLogs ? 'bg-emerald-500' : 'bg-navy-700'}`}></div>
+                <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableDebugLogs ? 'translate-x-4' : ''}`}></div>
+              </div>
+              <div className="text-sm font-medium text-navy-200">
+                {t('settings.enable_debug_logs')}
+                <p className="text-xs text-navy-400 font-normal mt-1">
+                  {t('settings.enable_debug_logs_hint')}
+                </p>
+              </div>
+            </label>
           </div>
 
           <div className="flex gap-4 border-t border-navy-700 pt-6">
@@ -392,6 +402,7 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
     // Cancel on raw escape
     if (e.key === 'Escape' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
        setIsRecording(false);
+       if (inputRef.current) inputRef.current.blur();
        return;
     }
     
@@ -399,6 +410,7 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
     if (e.key === 'Backspace' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
        onChange('');
        setIsRecording(false);
+       if (inputRef.current) inputRef.current.blur();
        return;
     }
 
@@ -428,6 +440,7 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
     keys.push(keyStr);
     onChange(keys.join('+'));
     setIsRecording(false);
+    if (inputRef.current) inputRef.current.blur();
   };
 
   const formatDisplay = (val: string) => {
@@ -448,6 +461,7 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
         readOnly
         value={isRecording ? t('settings.listening') : formatDisplay(value)}
         onFocus={startRecording}
+        onClick={startRecording}
         onBlur={() => setIsRecording(false)}
         onKeyDown={handleKeyDown}
         className={`w-64 bg-navy-900 border rounded p-1.5 text-sm focus:outline-none font-mono text-center transition-colors cursor-pointer ${

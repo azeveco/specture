@@ -1406,7 +1406,11 @@ function MainApp() {
             
             // Update system tray menu language
             invoke('update_tray_menu', {
-              captureText: i18n.t('settings.capture_region') || 'Take Screenshot',
+              openControlPanel: i18n.t('settings.open_control_panel') || 'Open Control Panel',
+              captureFullscreen: i18n.t('settings.capture_full_screen') || 'Capture Full Screen',
+              captureRegion: i18n.t('settings.capture_region') || 'Capture Region',
+              captureWindow: i18n.t('settings.capture_window') || 'Capture Window',
+              scrollingCapture: i18n.t('settings.scrolling_capture') || 'Scrolling Capture',
               settingsText: i18n.t('settings.title') || 'Settings...',
               quitText: i18n.t('app.quit') || 'Quit',
             }).catch(console.warn);
@@ -1477,17 +1481,7 @@ function MainApp() {
             return norm;
           };
 
-          const handleShortcut = async (firedShortcut: string) => {
-            let mode = null;
-            const normFired = normalizeShortcut(firedShortcut);
-            if (normFired === normalizeShortcut(settings.shortcutControlPanel)) mode = "control";
-            else if (normFired === normalizeShortcut(settings.shortcutFullScreen)) mode = "fullscreen";
-            else if (normFired === normalizeShortcut(settings.shortcutRegion)) mode = "region";
-            else if (normFired === normalizeShortcut(settings.shortcutWindow)) mode = "window";
-            else if (normFired === normalizeShortcut(settings.shortcutScrolling)) mode = "scrolling";
-            
-            if (!mode) return;
-
+          const executeAction = async (mode: string) => {
             try {
               const { invoke } = await import('@tauri-apps/api/core');
 
@@ -1544,6 +1538,18 @@ function MainApp() {
             }
           };
 
+          const handleShortcut = async (firedShortcut: string) => {
+            let mode = null;
+            const normFired = normalizeShortcut(firedShortcut);
+            if (normFired === normalizeShortcut(settings.shortcutControlPanel)) mode = "control";
+            else if (normFired === normalizeShortcut(settings.shortcutFullScreen)) mode = "fullscreen";
+            else if (normFired === normalizeShortcut(settings.shortcutRegion)) mode = "region";
+            else if (normFired === normalizeShortcut(settings.shortcutWindow)) mode = "window";
+            else if (normFired === normalizeShortcut(settings.shortcutScrolling)) mode = "scrolling";
+            
+            if (mode) await executeAction(mode);
+          };
+
           const { invoke } = await import('@tauri-apps/api/core');
           await invoke('register_shortcuts', { 
             shortcuts: [
@@ -1557,12 +1563,20 @@ function MainApp() {
 
           // Bind our rock-solid Rust IPC fallback listener once
           // Using global listener because Rust app.emit is global
-          const unlisten = await listen<string>("global-shortcut-triggered", async (e) => {
+          const unlistenShortcut = await listen<string>("global-shortcut-triggered", async (e) => {
             const firedShortcut = e.payload;
             await handleShortcut(firedShortcut);
           });
           
-          return unlisten;
+          const unlistenTray = await listen<string>("tray-action", async (e) => {
+            const action = e.payload;
+            if (action) await executeAction(action);
+          });
+          
+          return () => {
+             unlistenShortcut();
+             unlistenTray();
+          };
         } catch (err) {
           console.error("Shortcut setup failed", err);
           return () => {};
