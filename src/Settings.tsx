@@ -40,6 +40,7 @@ export default function Settings() {
         startAtLogin: false,
         maxRecordingDuration: 30,
         enableDebugLogs: false,
+        colorSpaceMode: "auto",
       };
       setSettingsState(resetSettings);
       await saveSettings(resetSettings);
@@ -299,7 +300,24 @@ export default function Settings() {
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <span>⚙️</span> Advanced
           </h2>
-          <div className="flex gap-4">
+
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-navy-200 mb-2">Color Space Mode</label>
+            <select 
+              value={settings.colorSpaceMode || "auto"}
+              onChange={(e) => updateSetting('colorSpaceMode', e.target.value as any)}
+              className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+            >
+              <option value="auto">Auto (Mac: P3, Win/Linux: sRGB)</option>
+              <option value="srgb">Manual: sRGB (Standard Web/Windows)</option>
+              <option value="display-p3">Manual: Display P3 (Vibrant/Mac)</option>
+            </select>
+            <p className="text-xs text-navy-400 mt-1">
+              Determines how screenshot pixels are interpreted. If colors look washed out or overly vibrant, try changing this.
+            </p>
+          </div>
+
+          <div className="flex gap-4 border-t border-navy-700 pt-6">
             <button 
               className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded text-sm transition-colors cursor-pointer"
               onClick={handleImport}

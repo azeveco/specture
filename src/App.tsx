@@ -43,6 +43,17 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | null;
 type Point = { x: number; y: number };
 
+const isMac = typeOs() === 'macos';
+const isP3 = window.matchMedia("(color-gamut: p3)").matches;
+let targetColorSpace: "srgb" | "display-p3" = isMac && isP3 ? "display-p3" : "srgb";
+
+async function updateTargetColorSpace() {
+  const settings = await loadSettings();
+  if (settings.colorSpaceMode === "srgb") targetColorSpace = "srgb";
+  else if (settings.colorSpaceMode === "display-p3") targetColorSpace = "display-p3";
+  else targetColorSpace = isMac && isP3 ? "display-p3" : "srgb";
+}
+
 interface Annotation {
   tool: Tool;
   color: string;
@@ -201,6 +212,7 @@ function RegionSelector() {
 
     const unlisten = listen<{ target: string, isScrolling?: boolean, isWindowMode?: boolean, isFullScreen?: boolean }>("load-image", async (e) => {
       if (e.payload.target !== "region-selector") return;
+      await updateTargetColorSpace();
       setIsScrollingMode(e.payload.isScrolling || false);
       setIsRecording(false);
       setIsHiding(false);
@@ -242,12 +254,31 @@ function RegionSelector() {
         
         const img = new Image();
         img.onload = () => {
-          const offCanvas = document.createElement("canvas");
-          offCanvas.width = img.width;
-          offCanvas.height = img.height;
-          const offCtx = offCanvas.getContext("2d");
-          if (offCtx) offCtx.drawImage(img, 0, 0);
-          setBaseImage(offCanvas);
+          const tempCanvas = document.createElement("canvas");
+          tempCanvas.width = img.width;
+          tempCanvas.height = img.height;
+          const tempCtx = tempCanvas.getContext("2d");
+          if (tempCtx) {
+            tempCtx.drawImage(img, 0, 0);
+            const rawData = tempCtx.getImageData(0, 0, img.width, img.height);
+            try {
+              const p3Data = new ImageData(rawData.data, img.width, img.height, { colorSpace: targetColorSpace });
+              const offCanvas = document.createElement("canvas");
+              offCanvas.width = img.width;
+              offCanvas.height = img.height;
+              const offCtx = offCanvas.getContext("2d", { colorSpace: targetColorSpace } as any) as CanvasRenderingContext2D | null;
+              if (offCtx) offCtx.putImageData(p3Data, 0, 0);
+              setBaseImage(offCanvas);
+            } catch (e) {
+              // Fallback for older browsers
+              const offCanvas = document.createElement("canvas");
+              offCanvas.width = img.width;
+              offCanvas.height = img.height;
+              const offCtx = offCanvas.getContext("2d");
+              if (offCtx) offCtx.drawImage(img, 0, 0);
+              setBaseImage(offCanvas);
+            }
+          }
           URL.revokeObjectURL(url);
           
           if (e.payload.isFullScreen && e.payload.isScrolling) {
@@ -273,7 +304,7 @@ function RegionSelector() {
     const handleResize = () => {
       const canvas = canvasRef.current;
       if (!canvas || !baseImage) return;
-      const ctx = canvas.getContext("2d");
+      const ctx = (canvas.getContext("2d", { colorSpace: targetColorSpace } as any) || canvas.getContext("2d")) as CanvasRenderingContext2D | null;
       if (!ctx) return;
 
       canvas.width = window.innerWidth;
@@ -635,6 +666,7 @@ function Editor() {
 
     const unlisten = listen<{ dataUrl?: string, target: string }>("load-image", async (e) => {
       if (e.payload.target !== "main") return;
+      await updateTargetColorSpace();
 
       try {
         await getCurrentWindow().center();
@@ -650,7 +682,29 @@ function Editor() {
               canvas.height = img.height;
             }
             setCanvasSize({ width: img.width, height: img.height });
-            setBaseImage(img);
+            
+            const tempCanvas = document.createElement("canvas");
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            const tempCtx = tempCanvas.getContext("2d");
+            if (tempCtx) {
+              tempCtx.drawImage(img, 0, 0);
+              const rawData = tempCtx.getImageData(0, 0, img.width, img.height);
+              try {
+                const p3Data = new ImageData(rawData.data, img.width, img.height, { colorSpace: targetColorSpace });
+                const offCanvas = document.createElement("canvas");
+                offCanvas.width = img.width;
+                offCanvas.height = img.height;
+                const offCtx = offCanvas.getContext("2d", { colorSpace: targetColorSpace } as any) as CanvasRenderingContext2D | null;
+                if (offCtx) offCtx.putImageData(p3Data, 0, 0);
+                setBaseImage(offCanvas);
+              } catch (e) {
+                setBaseImage(img);
+              }
+            } else {
+              setBaseImage(img);
+            }
+            
             setAnnotations([]);
             setRedoStack([]);
             await getCurrentWindow().center();
@@ -672,7 +726,29 @@ function Editor() {
               canvas.height = img.height;
             }
             setCanvasSize({ width: img.width, height: img.height });
-            setBaseImage(img);
+            
+            const tempCanvas = document.createElement("canvas");
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            const tempCtx = tempCanvas.getContext("2d");
+            if (tempCtx) {
+              tempCtx.drawImage(img, 0, 0);
+              const rawData = tempCtx.getImageData(0, 0, img.width, img.height);
+              try {
+                const p3Data = new ImageData(rawData.data, img.width, img.height, { colorSpace: targetColorSpace });
+                const offCanvas = document.createElement("canvas");
+                offCanvas.width = img.width;
+                offCanvas.height = img.height;
+                const offCtx = offCanvas.getContext("2d", { colorSpace: targetColorSpace } as any) as CanvasRenderingContext2D | null;
+                if (offCtx) offCtx.putImageData(p3Data, 0, 0);
+                setBaseImage(offCanvas);
+              } catch (e) {
+                setBaseImage(img);
+              }
+            } else {
+              setBaseImage(img);
+            }
+
             setAnnotations([]);
             setRedoStack([]);
             await getCurrentWindow().center();
@@ -698,7 +774,7 @@ function Editor() {
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = (canvas.getContext("2d", { colorSpace: targetColorSpace } as any) || canvas.getContext("2d")) as CanvasRenderingContext2D | null;
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -738,10 +814,10 @@ function Editor() {
           const dh = Math.max(1, Math.floor(h / blockSize));
           
           const temp = document.createElement("canvas");
-          temp.width = dw;
-          temp.height = dh;
-          const tCtx = temp.getContext("2d");
-          if (tCtx && baseImage instanceof HTMLImageElement) {
+          temp.width = canvas.width;
+          temp.height = canvas.height;
+          const tCtx = (temp.getContext("2d", { colorSpace: targetColorSpace } as any) || temp.getContext("2d")) as CanvasRenderingContext2D | null;
+          if (tCtx && baseImage) {
             tCtx.drawImage(baseImage, x, y, w, h, 0, 0, dw, dh);
             
             ctx.save();
@@ -830,7 +906,7 @@ function Editor() {
       e.preventDefault();
       const canvas = canvasRef.current;
       if (canvas) {
-        const ctx = canvas.getContext('2d');
+        const ctx = (canvas.getContext('2d', { colorSpace: targetColorSpace } as any) || canvas.getContext('2d')) as CanvasRenderingContext2D | null;
         const pos = getMousePos(e);
         if (ctx) {
           const pixel = ctx.getImageData(pos.x, pos.y, 1, 1).data;
