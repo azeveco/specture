@@ -625,6 +625,7 @@ function Editor() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState<{width: number, height: number} | null>(null);
   const isCancellingText = useRef(false);
+  const colorInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
@@ -823,6 +824,24 @@ function Editor() {
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (!baseImage) return;
+    
+    // Eyedropper
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        const pos = getMousePos(e);
+        if (ctx) {
+          const pixel = ctx.getImageData(pos.x, pos.y, 1, 1).data;
+          const hex = "#" + [pixel[0], pixel[1], pixel[2]].map(x => x.toString(16).padStart(2, '0')).join('');
+          setCurrentColor(hex);
+        }
+      }
+      return;
+    }
+    
+    if (!currentTool) return;
     
     if (currentTool === "text") {
       if (activeText) {
@@ -1118,11 +1137,13 @@ function Editor() {
                     onChange={e => setLineWidth(Number(e.target.value))}
                     className="w-24 accent-indigo-500"
                   />
+                  <span className="text-navy-300 text-xs w-4 text-center">{lineWidth}</span>
                 </div>
               )}
               
               <span className="text-navy-300 text-xs font-medium">Color:</span>
               <input 
+                ref={colorInputRef}
                 type="color" 
                 value={currentColor}
                 onChange={e => setCurrentColor(e.target.value)}
@@ -1154,10 +1175,27 @@ function Editor() {
                 ref={canvasRef} 
                 width={canvasSize?.width}
                 height={canvasSize?.height}
-                onMouseDown={currentTool ? onMouseDown : undefined} 
+                onMouseDown={onMouseDown} 
                 onMouseMove={currentTool ? onMouseMove : undefined} 
                 onMouseUp={currentTool ? onMouseUp : undefined} 
                 onMouseLeave={currentTool ? onMouseUp : undefined} 
+                onWheel={(e) => {
+                  if (currentTool === "text") {
+                    setFontSize(prev => Math.max(8, Math.min(100, prev - Math.sign(e.deltaY))));
+                  } else {
+                    setLineWidth(prev => Math.max(2, Math.min(30, prev - Math.sign(e.deltaY))));
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  if (colorInputRef.current) {
+                    if (typeof (colorInputRef.current as any).showPicker === 'function') {
+                      (colorInputRef.current as any).showPicker();
+                    } else {
+                      colorInputRef.current.click();
+                    }
+                  }
+                }}
                 className={`shadow-2xl rounded-sm ${currentTool === "freehand" ? "cursor-default" : (currentTool ? "cursor-crosshair" : "cursor-default")}`} 
                 style={{ 
                   position: 'absolute',
@@ -1177,10 +1215,13 @@ function Editor() {
                   autoFocus
                   value={activeText.text}
                   onChange={(e) => setActiveText({ ...activeText, text: e.target.value })}
-                  onBlur={() => {
+                  onBlur={(e) => {
                     if (isCancellingText.current) {
                       isCancellingText.current = false;
                       setActiveText(null);
+                      return;
+                    }
+                    if (e.relatedTarget && (e.relatedTarget as HTMLElement).closest('header')) {
                       return;
                     }
                     if (activeText.text.trim()) {
