@@ -30,22 +30,7 @@ export default function Settings() {
 
   const handleResetSettings = async () => {
     try {
-      const resetSettings: SpectureSettings = {
-        shortcutControlPanel: "CommandOrControl+Alt+5",
-        shortcutFullScreen: "CommandOrControl+Alt+3",
-        shortcutRegion: "CommandOrControl+Alt+4",
-        shortcutWindow: "CommandOrControl+Alt+7",
-        shortcutScrolling: "CommandOrControl+Alt+6",
-        saveOnCopy: false,
-        defaultSaveLocation: "",
-        namingConvention: "Specture_{YYYY-MM-DD}_{HH-MM-SS}",
-        stopButtonPosition: "hidden",
-        startAtLogin: false,
-        maxRecordingDuration: 30,
-        enableDebugLogs: false,
-        colorSpaceMode: "auto",
-        language: "en",
-      };
+      const resetSettings: SpectureSettings = { ...defaultSettings };
       setSettingsState(resetSettings);
       await saveSettings(resetSettings);
       

@@ -163,7 +163,7 @@ function ControlPanel() {
           className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
         >
           <span className="text-2xl">🪟</span>
-          <span className="text-white font-medium text-sm">{t('app.window')}</span>
+          <span className="text-white font-medium text-sm text-center leading-tight">{t('settings.capture_window')}</span>
         </button>
       </div>
     </div>
@@ -660,6 +660,7 @@ function Editor() {
   const [currentAnnotation, setCurrentAnnotation] = useState<Annotation | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState<{width: number, height: number} | null>(null);
+  const [isEyedropperActive, setIsEyedropperActive] = useState(false);
   const isCancellingText = useRef(false);
   const colorInputRef = useRef<HTMLInputElement>(null);
 
@@ -907,7 +908,7 @@ function Editor() {
     if (!baseImage) return;
     
     // Eyedropper
-    if (e.metaKey || e.ctrlKey) {
+    if (e.metaKey || e.ctrlKey || isEyedropperActive) {
       e.preventDefault();
       const canvas = canvasRef.current;
       if (canvas) {
@@ -919,6 +920,7 @@ function Editor() {
           setCurrentColor(hex);
         }
       }
+      setIsEyedropperActive(false);
       return;
     }
     
@@ -1223,6 +1225,13 @@ function Editor() {
               )}
               
               <span className="text-navy-300 text-xs font-medium">{t('app.color')}:</span>
+              <button 
+                onClick={() => setIsEyedropperActive(!isEyedropperActive)}
+                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${isEyedropperActive ? 'bg-indigo-600 text-white' : 'bg-navy-700 text-navy-300 hover:bg-navy-600 hover:text-white'}`}
+                title="Eyedropper (Command+Click)"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+              </button>
               <input 
                 ref={colorInputRef}
                 type="color" 
@@ -1277,7 +1286,7 @@ function Editor() {
                     }
                   }
                 }}
-                className={`shadow-2xl rounded-sm ${currentTool === "freehand" ? "cursor-default" : (currentTool ? "cursor-crosshair" : "cursor-default")}`} 
+                className={`shadow-2xl rounded-sm ${isEyedropperActive ? "cursor-crosshair" : (currentTool === "freehand" ? "cursor-default" : (currentTool ? "cursor-crosshair" : "cursor-default"))}`} 
                 style={{ 
                   position: 'absolute',
                   top: '50%',
@@ -1321,6 +1330,9 @@ function Editor() {
                       setActiveText(null);
                       setCurrentTool(null);
                     }
+                  }}
+                  onWheel={(e) => {
+                    setFontSize(prev => Math.max(8, Math.min(100, prev - Math.sign(e.deltaY))));
                   }}
                   style={{
                     position: 'fixed',

@@ -1,0 +1,11 @@
+# Ignore frontend files for GitHub language statistics so it shows up as a Rust project
+src/** linguist-vendored
+dist/** linguist-vendored
+node_modules/** linguist-vendored
+
+*.ts linguist-vendored
+*.tsx linguist-vendored
+*.js linguist-vendored
+*.json linguist-vendored
+*.css linguist-vendored
+*.html linguist-vendored

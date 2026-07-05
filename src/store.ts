@@ -26,11 +26,11 @@ export interface SpectureSettings {
 }
 
 export const defaultSettings: SpectureSettings = {
-  shortcutControlPanel: "CommandOrControl+Alt+5",
   shortcutFullScreen: "CommandOrControl+Alt+3",
   shortcutRegion: "CommandOrControl+Alt+4",
-  shortcutWindow: "CommandOrControl+Alt+7",
+  shortcutWindow: "CommandOrControl+Alt+5",
   shortcutScrolling: "CommandOrControl+Alt+6",
+  shortcutControlPanel: "CommandOrControl+Alt+7",
   saveOnCopy: false,
   defaultSaveLocation: "",
   namingConvention: "Specture_{YYYY-MM-DD}_{HH-MM-SS}",
