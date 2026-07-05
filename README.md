@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://i.imgur.com/vDHeVwG.png" width="128" alt="Specture Icon">
+  <img src="docs/assets/icon.png" width="128" alt="Specture Icon">
   <h1>Specture</h1>
   <p><strong>A fast, powerful, and beautiful cross-platform screenshot tool built with Tauri & React.</strong></p>
 </div>
@@ -22,11 +22,11 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 
 | Feature / Menu | Screenshot |
 | :--- | :--- |
-| **Control Panel**<br>The minimalist area selector for choosing your capture mode. | <a href="https://i.imgur.com/zbVKUY6.png" target="_blank"><img src="https://i.imgur.com/zbVKUY6.png" width="500" alt="Control Panel"></a> |
-| **Scrolling Capture (Selection)**<br>Selecting the region before the auto-scroll begins. | <a href="https://i.imgur.com/j28RQcr.png" target="_blank"><img src="https://i.imgur.com/j28RQcr.png" width="500" alt="Scrolling Capture Selection"></a> |
-| **Scrolling Capture (Result)**<br>A long, seamlessly stitched webpage. <br><br>*(Click to view full 5000+ px size)* | <a href="https://i.imgur.com/ohCGBpV.png" target="_blank"><img src="https://i.imgur.com/ohCGBpV.png" height="300" style="object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid #333;" alt="Scrolling Capture Output (Click to Expand)"></a> |
-| **Built-in Editor**<br>Instantly annotate with arrows, blur, text, and freehand drawing. | <a href="https://i.imgur.com/5CzsCfU.png" target="_blank"><img src="https://i.imgur.com/5CzsCfU.png" width="500" alt="Editor Screenshot"></a> |
-| **Final Result**<br>The high-quality output after saving from the editor. | <a href="https://i.imgur.com/ZamABOu.png" target="_blank"><img src="https://i.imgur.com/ZamABOu.png" width="500" alt="Output Screenshot"></a> |
+| **Control Panel**<br>The minimalist area selector for choosing your capture mode. | <a href="docs/assets/control_panel.png" target="_blank"><img src="docs/assets/control_panel.png" width="500" alt="Control Panel"></a> |
+| **Scrolling Capture (Selection)**<br>Selecting the region before the auto-scroll begins. | <a href="docs/assets/scrolling_capture_selection.png" target="_blank"><img src="docs/assets/scrolling_capture_selection.png" width="500" alt="Scrolling Capture Selection"></a> |
+| **Scrolling Capture (Result)**<br>A long, seamlessly stitched webpage. <br><br>*(Click to view full 5000+ px size)* | <a href="docs/assets/scrolling_capture_output.png" target="_blank"><img src="docs/assets/scrolling_capture_output.png" height="300" style="object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid #333;" alt="Scrolling Capture Output (Click to Expand)"></a> |
+| **Built-in Editor**<br>Instantly annotate with arrows, blur, text, and freehand drawing. | <a href="docs/assets/specture_editor.png" target="_blank"><img src="docs/assets/specture_editor.png" width="500" alt="Editor Screenshot"></a> |
+| **Final Result**<br>the high-quality output after saving from the editor. | <a href="docs/assets/specture_screenshot.png" target="_blank"><img src="docs/assets/specture_screenshot.png" width="500" alt="Output Screenshot"></a> |
 
 ---
 
@@ -104,6 +104,15 @@ Scrolling capture relies on taking multiple screenshots while simulating scrolli
 
 **4. How do I stop a Scrolling Capture?**
 You can stop it by clicking the red `Stop` icon in your system tray, pressing your Scrolling Capture shortcut again, or clicking the floating Stop button (if you have it enabled in Settings).
+
+**5. My screenshots are only capturing the desktop wallpaper, not my application windows. What is happening?**
+This is a macOS privacy protection feature. If Specture does not have explicit **Screen Recording** permission, macOS will hide all application windows and only allow the app to see your bare desktop wallpaper.
+If the system didn't automatically prompt you for this permission when you opened the app:
+1. Open your Mac's **System Settings**.
+2. Go to **Privacy & Security** > **Screen & System Audio Recording**.
+3. Click the **`+`** button at the bottom of the list.
+4. Navigate to your `Applications` folder and select `Specture` to add it manually.
+5. Ensure the toggle next to Specture is turned **ON**. (If it's already there but not working, select it, click the `-` button to remove it, and then add it again).
 
 ---
 
