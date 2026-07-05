@@ -20,13 +20,13 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 
 ## 📸 Screenshots
 
-*(Add screenshots of your application here)*
-
 | Feature / Menu | Screenshot |
-| --- | --- |
-| **Control Panel** | `[Insert Control Panel Screenshot Here]` |
-| **Region Capture & Editor** | `[Insert Editor Screenshot Here]` |
-| **Scrolling Capture** | `[Insert Scrolling Capture Screenshot Here]` |
+| :--- | :--- |
+| **Control Panel**<br>The minimalist area selector for choosing your capture mode. | <a href="https://github.com/user-attachments/assets/880cb063-7eb4-4671-80b0-005dbb146e8e" target="_blank"><img src="https://github.com/user-attachments/assets/880cb063-7eb4-4671-80b0-005dbb146e8e" width="500" alt="Control Panel"></a> |
+| **Scrolling Capture (Selection)**<br>Selecting the region before the auto-scroll begins. | <a href="https://github.com/user-attachments/assets/a847aac3-6844-443c-ad41-0ba5856d4eb0" target="_blank"><img src="https://github.com/user-attachments/assets/a847aac3-6844-443c-ad41-0ba5856d4eb0" width="500" alt="Scrolling Capture Selection"></a> |
+| **Scrolling Capture (Result)**<br>A long, seamlessly stitched webpage. <br><br>*(Click to view full 5000+ px size)* | <a href="https://github.com/user-attachments/assets/5907f95d-9e98-48e6-b491-663b6515754d" target="_blank"><img src="https://github.com/user-attachments/assets/5907f95d-9e98-48e6-b491-663b6515754d" height="300" style="object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid #333;" alt="Scrolling Capture Output (Click to Expand)"></a> |
+| **Built-in Editor**<br>Instantly annotate with arrows, blur, text, and freehand drawing. | <a href="https://github.com/user-attachments/assets/5f9ab2f7-ebce-4294-b9cb-0f50b0eac20a" target="_blank"><img src="https://github.com/user-attachments/assets/5f9ab2f7-ebce-4294-b9cb-0f50b0eac20a" width="500" alt="Editor Screenshot"></a> |
+| **Final Result**<br>The high-quality output after saving from the editor. | <a href="https://github.com/user-attachments/assets/41937333-22ff-459d-960e-57757a3c398f" target="_blank"><img src="https://github.com/user-attachments/assets/41937333-22ff-459d-960e-57757a3c398f" width="500" alt="Output Screenshot"></a> |
 
 ---
 
@@ -34,7 +34,7 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 
 Specture can be installed on macOS via Homebrew or manually via direct download. 
 
-### Option 1: Install via Homebrew (macOS)
+
 *(Assuming you have a Homebrew tap set up)*
 ```bash
 brew install your-username/tap/specture
@@ -45,16 +45,7 @@ brew install --cask specture
 ```
 
 ### Option 2: Direct Download (macOS, Windows, Linux)
-1. Go to the [Releases page](../../releases) on GitHub.
-2. Download the appropriate bundle for your operating system (e.g., `.dmg` or `.app` for macOS, `.exe` for Windows).
-3. Open the installer and follow the instructions.
 
-#### macOS: "App is damaged" or "Developer cannot be verified"
-If you download the `.dmg` or `.app` directly (instead of using Homebrew) and the app is not yet signed with an Apple Developer ID, macOS Gatekeeper may block it from launching. You have two ways to fix this:
-
-**Option A (Terminal - Recommended):**
-Run this command to remove the quarantine attribute:
-```bash
 xattr -cr /Applications/Specture.app
 ```
 

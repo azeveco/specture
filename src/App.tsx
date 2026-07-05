@@ -12,7 +12,7 @@ import { loadSettings } from "./store";
 import i18n from "./i18n";
 import React, { ErrorInfo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Square, Circle, ArrowRight, Pen, Droplet, Type } from 'lucide-react';
+import { Square, Circle, ArrowRight, Pen, Droplet, Type, Undo, Redo } from 'lucide-react';
 import "./App.css";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
@@ -1227,10 +1227,12 @@ function Editor() {
               <span className="text-navy-300 text-xs font-medium">{t('app.color')}:</span>
               <button 
                 onClick={() => setIsEyedropperActive(!isEyedropperActive)}
-                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${isEyedropperActive ? 'bg-indigo-600 text-white' : 'bg-navy-700 text-navy-300 hover:bg-navy-600 hover:text-white'}`}
-                title="Eyedropper (Command+Click)"
+                className={`p-2 rounded-md transition-colors duration-200 relative group flex items-center justify-center ${isEyedropperActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-200 hover:bg-navy-600 hover:text-white'}`}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+                <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
+                  Eyedropper (Cmd+Click)
+                </div>
               </button>
               <input 
                 ref={colorInputRef}
@@ -1242,11 +1244,17 @@ function Editor() {
             </div>
             
             <div className="flex gap-2 items-center">
-              <button onClick={handleUndo} disabled={annotations.length === 0} className="px-3 py-1.5 text-sm font-medium rounded-md bg-navy-700 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors">
-                Undo
+              <button onClick={handleUndo} disabled={annotations.length === 0} className="p-2 text-sm font-medium rounded-md bg-navy-700 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors relative group flex items-center justify-center">
+                <Undo size={16} />
+                <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
+                  Undo (Cmd+Z)
+                </div>
               </button>
-              <button onClick={handleRedo} disabled={redoStack.length === 0} className="px-3 py-1.5 text-sm font-medium rounded-md bg-navy-700 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors">
-                Redo
+              <button onClick={handleRedo} disabled={redoStack.length === 0} className="p-2 text-sm font-medium rounded-md bg-navy-700 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors relative group flex items-center justify-center">
+                <Redo size={16} />
+                <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
+                  Redo (Cmd+Y)
+                </div>
               </button>
               <div className="w-px h-6 bg-navy-600 mx-1"></div>
               <button onClick={handleCopy} className="px-4 py-1.5 text-sm font-medium rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
