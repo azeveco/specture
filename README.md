@@ -9,7 +9,7 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 
 ### ✨ Key Features
 - **Multiple Capture Modes**: Full Screen, Region, Window, and long Scrolling Capture.
-- **Built-in Editor**: Annotate your screenshots instantly with arrows, rectangles, circles, freehand drawing, blur (obfuscation), and text.
+- **Built-in Editor**: Annotate your screenshots instantly with arrows, rectangles, circles, freehand drawing, blur (obfuscation), text, and a realistic highlighter.
 - **Scrolling Capture**: Seamlessly capture long websites or documents without manual stitching.
 - **System Tray Integration**: Quietly runs in the background. Access your settings and capture modes with a single click.
 - **Multi-language Support**: Available in English, Brazilian Portuguese (`pt-BR`), and Spanish (`es`).
@@ -25,7 +25,7 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 | **Control Panel**<br>The minimalist area selector for choosing your capture mode. | <a href="docs/assets/control_panel.png" target="_blank"><img src="docs/assets/control_panel.png" width="500" alt="Control Panel"></a> |
 | **Scrolling Capture (Selection)**<br>Selecting the region before the auto-scroll begins. | <a href="docs/assets/scrolling_capture_selection.png" target="_blank"><img src="docs/assets/scrolling_capture_selection.png" width="500" alt="Scrolling Capture Selection"></a> |
 | **Scrolling Capture (Result)**<br>A long, seamlessly stitched webpage. <br><br>*(Click to view full 5000+ px size)* | <a href="docs/assets/scrolling_capture_output.png" target="_blank"><img src="docs/assets/scrolling_capture_output.png" height="300" style="object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid #333;" alt="Scrolling Capture Output (Click to Expand)"></a> |
-| **Built-in Editor**<br>Instantly annotate with arrows, blur, text, and freehand drawing. | <a href="docs/assets/specture_editor.png" target="_blank"><img src="docs/assets/specture_editor.png" width="500" alt="Editor Screenshot"></a> |
+| **Built-in Editor**<br>Instantly annotate with arrows, blur, text, highlighters, and freehand drawing. | <a href="docs/assets/specture_editor.png" target="_blank"><img src="docs/assets/specture_editor.png" width="500" alt="Editor Screenshot"></a> |
 | **Final Result**<br>the high-quality output after saving from the editor. | <a href="docs/assets/specture_screenshot.png" target="_blank"><img src="docs/assets/specture_screenshot.png" width="500" alt="Output Screenshot"></a> |
 
 ---
@@ -81,6 +81,8 @@ When you are in the annotation window, you can use these shortcuts to speed up y
 
 | Action | Shortcut |
 | --- | --- |
+| **Select Tools** | `1` (Rect), `2` (Circle), `3` (Arrow), `4` (Freehand), `5` (Blur), `6` (Text), `7` (Highlighter) |
+| **Straight Lines Constraint** | Hold `Shift` while using the Arrow, Rectangle, or Highlighter tools |
 | **Change Brush/Font Size** | `Scroll Wheel (Up/Down)` |
 | **Color Menu** | `Right Click anywhere on the screenshot` |
 | **Color Picker (Eyedropper)** | `Command + Click` (or `Ctrl + Click`) anywhere on the image |
