@@ -5,12 +5,24 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { getVersion } from '@tauri-apps/api/app';
 import { loadSettings, saveSettings, SpectureSettings, defaultSettings } from './store';
 import { useTranslation } from 'react-i18next';
+import { Settings as SettingsIcon, Monitor, Save, Sliders, Keyboard } from 'lucide-react';
+import React from 'react';
+
+type Tab = 'general' | 'shortcuts' | 'capture' | 'export' | 'advanced';
 
 export default function Settings() {
   const [settings, setSettingsState] = useState<SpectureSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<Tab>('general');
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { t, i18n } = useTranslation();
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     loadSettings().then(s => {
@@ -21,11 +33,25 @@ export default function Settings() {
 
     getVersion().then(setVersion).catch(console.error);
 
-    const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
+    const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
       event.preventDefault();
+      setActiveTab('general');
       await getCurrentWindow().hide();
     });
-    return () => { unlisten.then(f => f()); };
+    
+    let unlistenHide: (() => void) | undefined;
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen('tauri://hide', () => {
+        setActiveTab('general');
+      }).then((f) => {
+        unlistenHide = f;
+      });
+    });
+
+    return () => { 
+      unlistenClose.then(f => f()); 
+      if (unlistenHide) unlistenHide();
+    };
   }, []);
 
   const handleResetSettings = async () => {
@@ -95,275 +121,358 @@ export default function Settings() {
     }
   };
 
-  if (loading) return <div className="h-screen w-screen bg-navy-900 flex items-center justify-center text-white">{t('settings.loading')}</div>;
+  if (loading) return <div className="h-screen w-screen bg-zinc-950 flex items-center justify-center text-zinc-400">{t('settings.loading')}</div>;
 
   return (
-    <div className="h-screen w-screen bg-navy-900 flex flex-col p-6 overflow-auto custom-scrollbar">
-      <h1 className="text-2xl font-bold text-white mb-6">{t('settings.title')}</h1>
+    <div className="h-screen w-screen bg-zinc-950 flex overflow-hidden text-zinc-100 font-sans selection:bg-blue-500/30" style={{ colorScheme: 'dark' }}>
       
-      <div className="space-y-6 pb-6">
-        {/* Language Selection */}
-        <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>🌐</span> {t('settings.language')}
-          </h2>
-          <select 
-            value={settings.language || "en"}
-            onChange={(e) => {
-              const lang = e.target.value;
-              updateSetting('language', lang);
-              i18n.changeLanguage(lang);
-            }}
-            className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-          >
-            <option value="en">English</option>
-            <option value="pt-BR">Português (Brasil)</option>
-            <option value="es">Español</option>
-          </select>
-        </section>
-
-        {/* Global Shortcuts */}
-        <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>⌨️</span> {t('settings.global_shortcuts')}
-          </h2>
-          <div className="space-y-4">
-            <ShortcutInput 
-              label={t('settings.open_control_panel')} 
-              value={settings.shortcutControlPanel}
-              onChange={(val) => updateSetting('shortcutControlPanel', val)}
-            />
-            <ShortcutInput 
-              label={t('settings.capture_full_screen')} 
-              value={settings.shortcutFullScreen}
-              onChange={(val) => updateSetting('shortcutFullScreen', val)}
-            />
-            <ShortcutInput 
-              label={t('settings.capture_region')} 
-              value={settings.shortcutRegion}
-              onChange={(val) => updateSetting('shortcutRegion', val)}
-            />
-            <ShortcutInput 
-              label={t('settings.capture_window')} 
-              value={settings.shortcutWindow}
-              onChange={(val) => updateSetting('shortcutWindow', val)}
-            />
-            <ShortcutInput 
-              label={t('settings.scrolling_capture')} 
-              value={settings.shortcutScrolling}
-              onChange={(val) => updateSetting('shortcutScrolling', val)}
-            />
-            <p className="text-xs text-navy-300 mt-2">
-              {t('settings.shortcut_modifiers_hint')}
-            </p>
+      {/* Sidebar */}
+      <div className="w-48 bg-zinc-900 border-r border-zinc-800 flex flex-col">
+        <div className="p-4 pt-6 pb-2">
+          <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider px-2 mb-2">Settings</h2>
+        </div>
+        <nav className="flex-1 px-2 space-y-1">
+          <TabButton 
+            active={activeTab === 'general'} 
+            onClick={() => setActiveTab('general')} 
+            icon={<SettingsIcon size={16} />} 
+            label={t('settings.general') || "General"} 
+          />
+          <TabButton 
+            active={activeTab === 'shortcuts'} 
+            onClick={() => setActiveTab('shortcuts')} 
+            icon={<Keyboard size={16} />} 
+            label={t('settings.shortcuts') || "Shortcuts"} 
+          />
+          <TabButton 
+            active={activeTab === 'capture'} 
+            onClick={() => setActiveTab('capture')} 
+            icon={<Monitor size={16} />} 
+            label="Capture"
+          />
+          <TabButton 
+            active={activeTab === 'export'} 
+            onClick={() => setActiveTab('export')} 
+            icon={<Save size={16} />} 
+            label={t('settings.save_options')}
+          />
+          <TabButton 
+            active={activeTab === 'advanced'} 
+            onClick={() => setActiveTab('advanced')} 
+            icon={<Sliders size={16} />} 
+            label={t('settings.advanced_options')}
+          />
+        </nav>
+        
+        <div className="p-4 mt-auto">
+          <div className="text-[10px] text-zinc-600 font-mono text-center w-full">
+            v{version || "0.1.0"}
           </div>
-          
-          <div className="mt-6 pt-6 border-t border-navy-700">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={settings.startAtLogin || false}
-                onChange={async (e) => {
-                  const checked = e.target.checked;
-                  updateSetting('startAtLogin', checked);
-                  try {
-                    const { enable, disable } = await import('@tauri-apps/plugin-autostart');
-                    if (checked) {
-                      await enable();
-                    } else {
-                      await disable();
-                    }
-                  } catch (err) {
-                    console.error("Failed to set autostart", err);
-                  }
-                }}
-                className="w-5 h-5 accent-emerald-500 bg-navy-900 border-navy-600 rounded cursor-pointer"
-              />
-              <span className="text-white text-sm font-medium">{t('settings.start_at_login')}</span>
-            </label>
-            <p className="text-xs text-navy-400 mt-1 ml-8">
-              {t('settings.start_at_login_hint')}
-            </p>
-          </div>
-        </section>
-
-        {/* Save Options */}
-        <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>💾</span> {t('settings.save_options')}
-          </h2>
-
-          <div className="space-y-4">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={settings.saveOnCopy}
-                onChange={(e) => updateSetting('saveOnCopy', e.target.checked)}
-                className="w-5 h-5 accent-emerald-500 bg-navy-900 border-navy-600 rounded cursor-pointer"
-              />
-              <span className="text-white text-sm">{t('settings.save_on_copy')}</span>
-            </label>
-
-            <div>
-              <label className="block text-sm font-medium text-navy-200 mb-1">{t('settings.default_save_location')}</label>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  readOnly 
-                  value={settings.defaultSaveLocation} 
-                  placeholder={t('settings.select_folder_placeholder')}
-                  className="flex-1 bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-                />
-                <button 
-                  onClick={handleSelectFolder}
-                  className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded text-sm transition-colors cursor-pointer"
-                >
-                  {t('settings.browse_button')}
-                </button>
-                <button 
-                  onClick={() => updateSetting('defaultSaveLocation', '')}
-                  className="px-4 py-2 bg-red-900/30 hover:bg-red-900/60 text-red-300 rounded text-sm transition-colors cursor-pointer border border-red-900/50"
-                  title={t('settings.clear_folder_title')}
-                >
-                  {t('settings.clear_button')}
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-navy-200 mb-1">{t('settings.naming_convention')}</label>
-              <input 
-                type="text" 
-                value={settings.namingConvention}
-                onChange={(e) => updateSetting('namingConvention', e.target.value)}
-                placeholder="Specture_{YYYY-MM-DD}_{HH-MM-SS}"
-                className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-              />
-              <p className="text-xs text-navy-400 mt-1">
-                {t('settings.available_tags')} <code>{"{YYYY-MM-DD}"}</code>, <code>{"{HH-MM-SS}"}</code>, <code>{"{TIMESTAMP}"}</code>
-              </p>
-            </div>
-            
-          </div>
-        </section>
-
-        {/* Scrolling Capture Options */}
-        <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm mt-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>📜</span> {t('settings.scrolling_capture')}
-          </h2>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-navy-200 mb-2">{t('settings.stop_button_position')}</label>
-              <select 
-                value={settings.stopButtonPosition || "hidden"}
-                onChange={(e) => updateSetting('stopButtonPosition', e.target.value as any)}
-                className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-              >
-                <option value="top">{t('settings.position_top')}</option>
-                <option value="bottom">{t('settings.position_bottom')}</option>
-                <option value="left">{t('settings.position_left')}</option>
-                <option value="right">{t('settings.position_right')}</option>
-                <option value="hidden">{t('settings.position_hidden')}</option>
-              </select>
-              <p className="text-xs text-navy-400 mt-1">
-                {t('settings.stop_button_hint')}
-              </p>
-            </div>
-            
-            <div className="pt-4 border-t border-navy-700">
-              <label className="block text-sm font-medium text-navy-200 mb-2">{t('settings.max_duration')}</label>
-              <input 
-                type="number" 
-                min="1"
-                max="300"
-                value={settings.maxRecordingDuration || 30}
-                onChange={(e) => updateSetting('maxRecordingDuration', parseInt(e.target.value) || 30)}
-                className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-              />
-              <p className="text-xs text-navy-400 mt-1">
-                {t('settings.max_duration_hint')}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-navy-800 p-5 rounded-lg border border-navy-700 shadow-sm mt-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <span>⚙️</span> {t('settings.advanced_options')}
-          </h2>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-navy-200 mb-2">{t('settings.color_space_mode')}</label>
-            <select 
-              value={settings.colorSpaceMode || "auto"}
-              onChange={(e) => updateSetting('colorSpaceMode', e.target.value as any)}
-              className="w-full bg-navy-900 border border-navy-700 rounded p-2 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors"
-            >
-              <option value="auto">{t('settings.color_space_auto')}</option>
-              <option value="srgb">{t('settings.color_space_srgb')}</option>
-              <option value="display-p3">{t('settings.color_space_p3')}</option>
-            </select>
-            <p className="text-xs text-navy-400 mt-1">
-              {t('settings.color_space_hint')}
-            </p>
-          </div>
-
-          <div className="pt-4 border-t border-navy-700 mb-6">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div className="relative">
-                <input 
-                  type="checkbox" 
-                  className="sr-only" 
-                  checked={settings.enableDebugLogs}
-                  onChange={(e) => {
-                    updateSetting('enableDebugLogs', e.target.checked);
-                    import('@tauri-apps/api/core').then(({ invoke }) => {
-                      invoke('set_debug_logs_enabled', { enabled: e.target.checked }).catch(console.warn);
-                    });
-                  }}
-                />
-                <div className={`block w-10 h-6 rounded-full transition-colors ${settings.enableDebugLogs ? 'bg-emerald-500' : 'bg-navy-700'}`}></div>
-                <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableDebugLogs ? 'translate-x-4' : ''}`}></div>
-              </div>
-              <div className="text-sm font-medium text-navy-200">
-                {t('settings.enable_debug_logs')}
-                <p className="text-xs text-navy-400 font-normal mt-1">
-                  {t('settings.enable_debug_logs_hint')}
-                </p>
-              </div>
-            </label>
-          </div>
-
-          <div className="flex gap-4 border-t border-navy-700 pt-6">
-            <button 
-              className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded text-sm transition-colors cursor-pointer"
-              onClick={handleImport}
-            >
-              {t('settings.import_settings')}
-            </button>
-            <button 
-              className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded text-sm transition-colors cursor-pointer"
-              onClick={handleExport}
-            >
-              {t('settings.export_settings')}
-            </button>
-
-            <button 
-              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm transition-colors cursor-pointer"
-              onClick={handleResetSettings}
-            >
-              {t('settings.reset_to_defaults')}
-            </button>
-          </div>
-        </section>
+        </div>
       </div>
-      
-      <div className="mt-auto pt-6 text-center text-xs text-navy-400 font-mono">
-        v{version || "0.1.0"}
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col h-full bg-zinc-950 relative">
+        <div className="h-12 border-b border-zinc-900 flex items-center px-6">
+          <h1 className="text-sm font-medium text-zinc-300">
+            {activeTab === 'general' && "General Settings"}
+            {activeTab === 'shortcuts' && "Shortcuts"}
+            {activeTab === 'capture' && "Capture Settings"}
+            {activeTab === 'export' && "Export & Saving"}
+            {activeTab === 'advanced' && "Advanced"}
+          </h1>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 custom-scrollbar" ref={scrollRef}>
+          <div className="max-w-2xl mx-auto space-y-8">
+            
+            {/* GENERAL TAB */}
+            {activeTab === 'general' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <Panel title="General" description="Basic application preferences.">
+                  <SettingRow label={t('settings.language')}>
+                    <select 
+                      value={settings.language || "en"}
+                      onChange={(e) => {
+                        const lang = e.target.value;
+                        updateSetting('language', lang);
+                        i18n.changeLanguage(lang);
+                      }}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="en">English</option>
+                      <option value="pt-BR">Português (Brasil)</option>
+                      <option value="es">Español</option>
+                    </select>
+                  </SettingRow>
+                  
+                  <SettingRow label={t('settings.start_at_login')}>
+                    <Toggle 
+                      checked={settings.startAtLogin || false}
+                      onChange={async (checked) => {
+                        updateSetting('startAtLogin', checked);
+                        try {
+                          const { enable, disable } = await import('@tauri-apps/plugin-autostart');
+                          if (checked) {
+                            await enable();
+                          } else {
+                            await disable();
+                          }
+                        } catch (err) {
+                          console.error("Failed to set autostart", err);
+                        }
+                      }}
+                    />
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.highlighter_mode', 'Highlighter Default Mode')}>
+                    <select 
+                      value={settings.highlighterMode || "normal"}
+                      onChange={(e) => updateSetting('highlighterMode', e.target.value as "normal" | "multiply")}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="normal">{t('settings.highlighter_normal', 'Normal Transparency')}</option>
+                      <option value="multiply">{t('settings.highlighter_multiply', 'Multiply Blend')}</option>
+                    </select>
+                  </SettingRow>
+                </Panel>
+              </div>
+            )}
+
+            {/* SHORTCUTS TAB */}
+            {activeTab === 'shortcuts' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <Panel title={t('settings.global_shortcuts')} description={t('settings.shortcut_modifiers_hint')}>
+                  <ShortcutInput label={t('settings.open_control_panel')} value={settings.shortcutControlPanel} onChange={(val) => updateSetting('shortcutControlPanel', val)} />
+                  <ShortcutInput label={t('settings.capture_full_screen')} value={settings.shortcutFullScreen} onChange={(val) => updateSetting('shortcutFullScreen', val)} />
+                  <ShortcutInput label={t('settings.capture_region')} value={settings.shortcutRegion} onChange={(val) => updateSetting('shortcutRegion', val)} />
+                  <ShortcutInput label={t('settings.capture_window')} value={settings.shortcutWindow} onChange={(val) => updateSetting('shortcutWindow', val)} />
+                  <ShortcutInput label={t('settings.scrolling_capture')} value={settings.shortcutScrolling} onChange={(val) => updateSetting('shortcutScrolling', val)} />
+                </Panel>
+
+                <Panel title={t('settings.editor_cheatsheet', 'Editor Cheat Sheet')} description={t('settings.editor_cheatsheet_desc', 'Quick keyboard and mouse shortcuts for the annotation editor.')}>
+                  {(() => {
+                    const isMac = navigator.userAgent.toLowerCase().includes('mac');
+                    const ctrl = isMac ? '⌘' : 'Ctrl';
+                    const shift = isMac ? '⇧' : 'Shift';
+                    return (
+                      <>
+                        <CheatSheetRow label={t('settings.cheat_tools', 'Select Tools (1-7)')} shortcut={<><Kbd>1</Kbd><span className="text-zinc-600 text-xs">..</span><Kbd>7</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_color', 'Open Color Picker')} shortcut={<Kbd>Right Click</Kbd>} />
+                        <CheatSheetRow label={t('settings.cheat_eyedropper', 'Eyedropper Tool')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Click</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_undo', 'Undo Action')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Z</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_redo', 'Redo Action')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>{shift}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Z</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_save', 'Save Image')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>S</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_copy', 'Copy to Clipboard')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>C</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_cancel', 'Cancel / Deselect')} shortcut={<Kbd>Esc</Kbd>} />
+                      </>
+                    );
+                  })()}
+                </Panel>
+              </div>
+            )}
+
+            {/* CAPTURE TAB */}
+            {activeTab === 'capture' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <Panel title={t('settings.scrolling_capture')} description={t('settings.max_duration_hint')}>
+                  <SettingRow label={t('settings.stop_button_position')}>
+                    <select 
+                      value={settings.stopButtonPosition || "hidden"}
+                      onChange={(e) => updateSetting('stopButtonPosition', e.target.value as any)}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="top">{t('settings.position_top')}</option>
+                      <option value="bottom">{t('settings.position_bottom')}</option>
+                      <option value="left">{t('settings.position_left')}</option>
+                      <option value="right">{t('settings.position_right')}</option>
+                      <option value="hidden">{t('settings.position_hidden')}</option>
+                    </select>
+                  </SettingRow>
+                  
+                  <SettingRow label={t('settings.max_duration')}>
+                    <input 
+                      type="number" 
+                      min="1" max="300"
+                      value={settings.maxRecordingDuration || 30}
+                      onChange={(e) => updateSetting('maxRecordingDuration', parseInt(e.target.value) || 30)}
+                      className="w-24 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors text-center"
+                    />
+                  </SettingRow>
+                </Panel>
+              </div>
+            )}
+
+            {/* EXPORT TAB */}
+            {activeTab === 'export' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <Panel title={t('settings.save_options')} description="Configure how and where your captures are saved.">
+                  <SettingRow label={t('settings.save_on_copy')}>
+                    <Toggle 
+                      checked={settings.saveOnCopy}
+                      onChange={(checked) => updateSetting('saveOnCopy', checked)}
+                    />
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.default_save_location')}>
+                    <div className="flex gap-2 w-full max-w-[450px]">
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={settings.defaultSaveLocation} 
+                        placeholder={t('settings.select_folder_placeholder')}
+                        className="flex-1 min-w-0 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-300 focus:outline-none focus:border-blue-500/50 text-ellipsis overflow-hidden whitespace-nowrap"
+                      />
+                      <button onClick={handleSelectFolder} className="shrink-0 px-3 h-8 flex items-center bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-md text-sm transition-colors cursor-pointer">
+                        {t('settings.browse_button')}
+                      </button>
+                      <button onClick={() => updateSetting('defaultSaveLocation', '')} className="shrink-0 px-3 h-8 flex items-center bg-red-950/30 hover:bg-red-900/40 text-red-400 border border-red-900/30 rounded-md text-sm transition-colors cursor-pointer" title={t('settings.clear_folder_title')}>
+                        {t('settings.clear_button')}
+                      </button>
+                    </div>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.naming_convention')}>
+                    <input 
+                      type="text" 
+                      value={settings.namingConvention}
+                      onChange={(e) => updateSetting('namingConvention', e.target.value)}
+                      placeholder="Specture_{YYYY-MM-DD}_{HH-MM-SS}"
+                      className="w-full max-w-[450px] h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50"
+                    />
+                  </SettingRow>
+                </Panel>
+              </div>
+            )}
+
+            {/* ADVANCED TAB */}
+            {activeTab === 'advanced' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <Panel title="Advanced & Maintenance" description="System options and configuration data management.">
+                  <SettingRow label={t('settings.color_space_mode')}>
+                    <select 
+                      value={settings.colorSpaceMode || "auto"}
+                      onChange={(e) => updateSetting('colorSpaceMode', e.target.value as any)}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="auto">{t('settings.color_space_auto')}</option>
+                      <option value="srgb">{t('settings.color_space_srgb')}</option>
+                      <option value="display-p3">{t('settings.color_space_p3')}</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.enable_debug_logs')}>
+                    <Toggle 
+                      checked={settings.enableDebugLogs}
+                      onChange={(checked) => {
+                        updateSetting('enableDebugLogs', checked);
+                        import('@tauri-apps/api/core').then(({ invoke }) => {
+                          invoke('set_debug_logs_enabled', { enabled: checked }).catch(console.warn);
+                        });
+                      }}
+                    />
+                  </SettingRow>
+
+                  <SettingRow label="Configuration Data">
+                    <div className="flex gap-2">
+                      <button onClick={handleImport} className="px-4 h-8 flex items-center bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded-md text-sm transition-colors cursor-pointer">
+                        Import
+                      </button>
+                      <button onClick={handleExport} className="px-4 h-8 flex items-center bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded-md text-sm transition-colors cursor-pointer">
+                        Export
+                      </button>
+                      <button onClick={handleResetSettings} className="px-4 h-8 flex items-center bg-red-950/30 hover:bg-red-900/40 border border-red-900/50 text-red-400 rounded-md text-sm transition-colors cursor-pointer">
+                        Reset
+                      </button>
+                    </div>
+                  </SettingRow>
+                </Panel>
+              </div>
+            )}
+            
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Reusable Sub-components
+// ----------------------------------------------------------------------
+
+function TabButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors ${
+        active ? 'bg-blue-600/10 text-blue-400 font-medium' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+      }`}
+    >
+      <span className={active ? 'text-blue-500' : 'text-zinc-500'}>{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+function Panel({ title, description, children }: { title: string, description: string, children: React.ReactNode }) {
+  return (
+    <section className="mb-8">
+      <div className="mb-4">
+        <h3 className="text-sm font-medium text-zinc-200">{title}</h3>
+        <p className="text-xs text-zinc-500 mt-1 leading-relaxed">{description}</p>
+      </div>
+      <div className="bg-zinc-900/30 border border-zinc-800/50 rounded-xl overflow-hidden shadow-sm flex flex-col">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function SettingRow({ label, children }: { label: string, children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between py-3 px-4 border-b border-zinc-800/40 last:border-0 hover:bg-zinc-800/20 transition-colors">
+      <span className="text-sm font-medium text-zinc-300 whitespace-nowrap mr-4 shrink-0">{label}</span>
+      <div className="flex items-center justify-end gap-2 flex-1 min-w-0">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CheatSheetRow({ label, shortcut }: { label: string, shortcut: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between py-3 px-4 border-b border-zinc-800/40 last:border-0 hover:bg-zinc-800/20 transition-colors">
+      <span className="text-sm font-medium text-zinc-300">{label}</span>
+      <div className="flex items-center gap-1">
+        {shortcut}
+      </div>
+    </div>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-[11px] font-mono text-zinc-200 shadow-sm whitespace-nowrap">{children}</kbd>;
+}
+
+function Toggle({ checked, onChange }: { checked: boolean, onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 ${
+        checked ? 'bg-blue-500' : 'bg-zinc-700'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform ${
+          checked ? 'translate-x-2' : '-translate-x-2'
+        }`}
+      />
+    </button>
   );
 }
 
@@ -375,6 +484,26 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
   const startRecording = () => {
     setIsRecording(true);
     if (inputRef.current) inputRef.current.focus();
+  };
+
+  const isMac = navigator.userAgent.toLowerCase().includes('mac');
+
+  const formatDisplay = (val: string) => {
+    if (!val) return val;
+    if (isMac) {
+      return val.split('+').map(p => {
+        return p
+          .replace(/CommandOrControl/gi, '⌘')
+          .replace(/Command/gi, '⌘')
+          .replace(/Cmd/gi, '⌘')
+          .replace(/Control/gi, '⌃')
+          .replace(/Ctrl/gi, '⌃')
+          .replace(/Option/gi, '⌥')
+          .replace(/Alt/gi, '⌥')
+          .replace(/Shift/gi, '⇧');
+      }).join(' ');
+    }
+    return val.replace(/CommandOrControl/gi, 'Ctrl').split('+').join(' + ');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -398,64 +527,59 @@ function ShortcutInput({ label, value, onChange }: { label: string, value: strin
        if (inputRef.current) inputRef.current.blur();
        return;
     }
-
-    const keys = [];
-    if (e.metaKey) keys.push("CommandOrControl");
-    if (e.ctrlKey) keys.push("Control");
-    if (e.altKey) keys.push("Alt");
-    if (e.shiftKey) keys.push("Shift");
     
-    let keyStr = e.key;
-    const code = e.code; // e.g., 'KeyX', 'Digit3', 'Minus', 'Equal'
-
-    if (code.startsWith('Key')) {
-      keyStr = code.replace('Key', '');
-    } else if (code.startsWith('Digit')) {
-      keyStr = code.replace('Digit', '');
-    } else if (code === 'Space') {
-      keyStr = 'Space';
-    } else if (code === 'Enter') {
-      keyStr = 'Enter'; // or Return
-    } else {
-      // fallback to key but normalized
-      if (keyStr.length === 1) keyStr = keyStr.toUpperCase();
-      else keyStr = keyStr.charAt(0).toUpperCase() + keyStr.slice(1);
-    }
+    const modifiers = [];
+    if (e.ctrlKey) modifiers.push('CommandOrControl');
+    if (e.altKey) modifiers.push('Option');
+    if (e.shiftKey) modifiers.push('Shift');
     
-    keys.push(keyStr);
-    onChange(keys.join('+'));
+    const keyMap: Record<string, string> = {
+      ' ': 'Space',
+      'ArrowUp': 'Up',
+      'ArrowDown': 'Down',
+      'ArrowLeft': 'Left',
+      'ArrowRight': 'Right',
+      'Enter': 'Return'
+    };
+    
+    let key = keyMap[e.key] || e.key.toUpperCase();
+    if (key.length === 1 && key >= 'a' && key <= 'z') key = key.toUpperCase();
+    
+    if (modifiers.length === 0 && key.length === 1) return;
+    
+    const shortcut = [...modifiers, key].join('+');
+    onChange(shortcut);
     setIsRecording(false);
     if (inputRef.current) inputRef.current.blur();
   };
 
-  const formatDisplay = (val: string) => {
-    if (!val) return t('settings.unassigned');
-    let formatted = val;
-    // Format for macOS if applicable
-    formatted = formatted.replace("CommandOrControl", "Command");
-    formatted = formatted.replace("Alt", "Option");
-    return formatted.split('+').join(' + ');
-  };
-
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm text-navy-100">{label}</span>
-      <input 
-        ref={inputRef}
-        type="text" 
-        readOnly
-        value={isRecording ? t('settings.listening') : formatDisplay(value)}
-        onFocus={startRecording}
-        onClick={startRecording}
-        onBlur={() => setIsRecording(false)}
-        onKeyDown={handleKeyDown}
-        className={`w-64 bg-navy-900 border rounded p-1.5 text-sm focus:outline-none font-mono text-center transition-colors cursor-pointer ${
-          isRecording 
-            ? 'border-indigo-500 text-indigo-300 shadow-[0_0_8px_rgba(99,102,241,0.5)]' 
-            : 'border-navy-700 text-white hover:border-navy-600'
-        }`}
-        placeholder={t('settings.click_to_set')}
-      />
+    <div className="flex items-center justify-between py-3 px-4 border-b border-zinc-800/40 last:border-0 hover:bg-zinc-800/20 transition-colors">
+      <span className="text-sm font-medium text-zinc-300">{label}</span>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={isRecording ? t('settings.press_shortcut') : formatDisplay(value)}
+          readOnly
+          onFocus={startRecording}
+          onBlur={() => setIsRecording(false)}
+          onKeyDown={handleKeyDown}
+          placeholder={t('settings.shortcut_placeholder')}
+          className={`w-56 bg-zinc-900/80 border rounded-md py-1.5 px-2 text-[11px] text-center font-mono cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+            isRecording ? 'border-blue-500 text-blue-400 bg-blue-500/10' : 'border-zinc-700 text-zinc-300 hover:border-zinc-600'
+          }`}
+        />
+        {value && !isRecording && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onChange(''); }}
+            className="absolute right-1 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-0.5"
+            title="Clear"
+          >
+            ×
+          </button>
+        )}
+      </div>
     </div>
   );
 }

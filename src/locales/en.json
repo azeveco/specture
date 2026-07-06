@@ -1,6 +1,7 @@
 {
   "settings": {
     "title": "Settings",
+    "general": "General",
     "language": "Language",
     "global_shortcuts": "Global Shortcuts",
     "open_control_panel": "Open Control Panel",
@@ -40,9 +41,23 @@
     "import_settings": "Import Settings",
     "export_settings": "Export Settings",
     "reset_to_defaults": "Reset to Defaults",
+    "shortcuts": "Shortcuts",
+    "editor_cheatsheet": "Editor Cheat Sheet",
+    "editor_cheatsheet_desc": "Quick keyboard and mouse shortcuts for the annotation editor.",
+    "cheat_tools": "Select Tools (1-7)",
+    "cheat_color": "Open Color Picker",
+    "cheat_eyedropper": "Eyedropper Tool",
+    "cheat_undo": "Undo Action",
+    "cheat_redo": "Redo Action",
+    "cheat_save": "Save Image",
+    "cheat_copy": "Copy to Clipboard",
+    "cheat_cancel": "Cancel / Deselect",
     "unassigned": "Unassigned",
     "listening": "Listening...",
-    "click_to_set": "Click to set shortcut"
+    "click_to_set": "Click to set shortcut",
+    "highlighter_mode": "Highlighter Default Mode",
+    "highlighter_normal": "Normal Transparency",
+    "highlighter_multiply": "Multiply Blend"
   },
   "app": {
     "loading": "Loading...",
@@ -52,6 +67,7 @@
     "circle": "Circle",
     "arrow": "Arrow",
     "freehand": "Freehand",
+    "highlighter": "Highlighter",
     "blur": "Blur",
     "text": "Text",
     "thickness": "Thickness",

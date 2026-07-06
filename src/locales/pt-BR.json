@@ -1,6 +1,7 @@
 {
   "settings": {
     "title": "Configurações",
+    "general": "Geral",
     "language": "Idioma",
     "global_shortcuts": "Atalhos Globais",
     "open_control_panel": "Abrir Painel de Controle",
@@ -40,9 +41,23 @@
     "import_settings": "Importar Configurações",
     "export_settings": "Exportar Configurações",
     "reset_to_defaults": "Restaurar Padrões",
+    "shortcuts": "Atalhos",
+    "editor_cheatsheet": "Guia de Atalhos do Editor",
+    "editor_cheatsheet_desc": "Atalhos rápidos de teclado e mouse para o editor de anotações.",
+    "cheat_tools": "Selecionar Ferramentas (1-7)",
+    "cheat_color": "Abrir Seletor de Cor",
+    "cheat_eyedropper": "Conta-gotas (Pegar Cor)",
+    "cheat_undo": "Desfazer Ação",
+    "cheat_redo": "Refazer Ação",
+    "cheat_save": "Salvar Imagem",
+    "cheat_copy": "Copiar para Área de Transferência",
+    "cheat_cancel": "Cancelar / Desmarcar",
     "unassigned": "Não atribuído",
     "listening": "Ouvindo...",
-    "click_to_set": "Clique para definir atalho"
+    "click_to_set": "Clique para definir atalho",
+    "highlighter_mode": "Modo Padrão do Marca-texto",
+    "highlighter_normal": "Transparência Normal",
+    "highlighter_multiply": "Efeito Multiplicar (Multiply)"
   },
   "app": {
     "loading": "Carregando...",
@@ -52,6 +67,7 @@
     "circle": "Circle",
     "arrow": "Arrow",
     "freehand": "Freehand",
+    "highlighter": "Highlighter",
     "blur": "Blur",
     "text": "Text",
     "thickness": "Espessura",
