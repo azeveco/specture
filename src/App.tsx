@@ -12,7 +12,7 @@ import { loadSettings } from "./store";
 import i18n from "./i18n";
 import React, { ErrorInfo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Square, Circle, ArrowRight, Pen, Droplet, Type, Undo, Redo } from 'lucide-react';
+import { Square, Circle, ArrowRight, Pen, Droplet, Type, Undo, Redo, Monitor, Scissors, AppWindow, Highlighter } from 'lucide-react';
 import "./App.css";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
@@ -42,7 +42,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 // ----------------------------------------------------
 // Types
 // ----------------------------------------------------
-type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | null;
+type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | "highlighter" | null;
 type Point = { x: number; y: number };
 
 const isMac = typeOs() === 'macos';
@@ -65,6 +65,7 @@ interface Annotation {
   text?: string;
   fontFamily?: string;
   fontSize?: number;
+  highlighterMode?: "normal" | "multiply";
 }
 
 // ----------------------------------------------------
@@ -100,7 +101,7 @@ function ControlPanel() {
       // emit lightweight signal
       await emit("load-image", { target, isScrolling: isScrollingSetup, isWindowMode: mode === "window", isFullScreen: mode === "fullscreen" });
       await getCurrentWindow().hide();
-      setIsScrollingSetup(false); // reset state after use
+      setIsScrollingSetup(false);
     } catch (e: any) {
       console.error(e);
       setErrorMsg(String(e));
@@ -124,6 +125,26 @@ function ControlPanel() {
       await getCurrentWindow().setFocus();
     });
     
+    // Position the window at the top center of the screen
+    import('@tauri-apps/api/window').then(async ({ currentMonitor, LogicalPosition }) => {
+      try {
+        const monitor = await currentMonitor();
+        if (monitor) {
+          const factor = monitor.scaleFactor;
+          // Calculate center X (in logical pixels)
+          const logicalWidth = monitor.size.width / factor;
+          const windowWidth = 400; 
+          const x = (logicalWidth / 2) - (windowWidth / 2);
+          const y = 30; // 30px from the top
+          
+          const win = getCurrentWindow();
+          await win.setPosition(new LogicalPosition(x, y));
+        }
+      } catch (err) {
+         console.warn("Failed to set control panel position", err);
+      }
+    });
+    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       unlisten.then(f => f());
@@ -131,39 +152,45 @@ function ControlPanel() {
   }, []);
 
   return (
-    <div className="h-screen w-screen flex flex-col items-center justify-center bg-navy-900 border-2 border-navy-700 rounded-lg select-none p-4 relative">
-      {errorMsg && (
-        <div className="absolute top-0 left-0 w-full bg-red-500 text-white text-xs p-1 text-center">
-          {errorMsg}
-        </div>
-      )}
-      <h2 className="text-white font-semibold mb-4 opacity-80 mt-2">
-        {isScrollingSetup ? t('settings.scrolling_capture') : t('settings.open_control_panel')}
-      </h2>
-      <div className="flex gap-4">
+    <div className="h-screen w-screen flex items-center justify-center bg-transparent overflow-hidden">
+      <div className={`flex flex-row items-center justify-center gap-6 bg-zinc-950/90 backdrop-blur-xl border rounded-full select-none h-14 w-fit px-8 shadow-[0_8px_30px_rgba(0,0,0,0.4)] relative transition-colors ${isScrollingSetup ? 'border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.3)]' : 'border-zinc-800/80'}`}>
+        {errorMsg && (
+          <div className="absolute top-12 w-[90%] bg-red-900/80 text-red-100 text-[9px] p-1 rounded text-center font-medium backdrop-blur-sm z-50 shadow-lg">
+            {errorMsg}
+          </div>
+        )}
+        
+        {isScrollingSetup && (
+          <div className="absolute -top-6 bg-blue-600 text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shadow-md">
+            {t('settings.scrolling_capture')}
+          </div>
+        )}
+        
         <button 
           onClick={() => handleCapture("fullscreen")}
           disabled={loading}
-          className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
+          title={t('settings.capture_full_screen')}
+          className={`flex items-center justify-center p-2 rounded-full transition-all w-10 h-10 border active:scale-90 shadow-sm ${isScrollingSetup ? 'bg-blue-900/30 border-blue-700/50 text-blue-300 hover:bg-blue-800/50' : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-white hover:border-zinc-700'}`}
         >
-          <span className="text-2xl">🖥️</span>
-          <span className="text-white font-medium text-sm">{t('settings.capture_full_screen')}</span>
+          <Monitor size={18} strokeWidth={2.5} />
         </button>
+        
         <button 
           onClick={() => handleCapture("region")}
           disabled={loading}
-          className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
+          title={t('settings.capture_region')}
+          className={`flex items-center justify-center p-2 rounded-full transition-all w-10 h-10 border active:scale-90 shadow-sm ${isScrollingSetup ? 'bg-blue-900/30 border-blue-700/50 text-blue-300 hover:bg-blue-800/50' : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-white hover:border-zinc-700'}`}
         >
-          <span className="text-2xl">✂️</span>
-          <span className="text-white font-medium text-sm">{t('settings.capture_region')}</span>
+          <Scissors size={18} strokeWidth={2.5} />
         </button>
+        
         <button 
           onClick={() => handleCapture("window")}
           disabled={loading}
-          className={`flex flex-col items-center gap-2 p-4 bg-navy-800 hover:bg-navy-700 rounded-xl transition-all w-32 border shadow-md active:scale-95 ${isScrollingSetup ? "border-emerald-600 shadow-emerald-900/50" : "border-navy-600"}`}
+          title={t('settings.capture_window')}
+          className={`flex items-center justify-center p-2 rounded-full transition-all w-10 h-10 border active:scale-90 shadow-sm ${isScrollingSetup ? 'bg-blue-900/30 border-blue-700/50 text-blue-300 hover:bg-blue-800/50' : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-white hover:border-zinc-700'}`}
         >
-          <span className="text-2xl">🪟</span>
-          <span className="text-white font-medium text-sm text-center leading-tight">{t('settings.capture_window')}</span>
+          <AppWindow size={18} strokeWidth={2.5} />
         </button>
       </div>
     </div>
@@ -654,6 +681,7 @@ function Editor() {
   const [lineWidth, setLineWidth] = useState<number>(4);
   const [fontFamily, setFontFamily] = useState<string>("Inter");
   const [fontSize, setFontSize] = useState<number>(24);
+  const [highlighterMode, setHighlighterMode] = useState<"normal" | "multiply">("normal");
   const [activeText, setActiveText] = useState<{ x: number, y: number, clientX: number, clientY: number, text: string } | null>(null);
   
   const [isDrawing, setIsDrawing] = useState(false);
@@ -673,6 +701,9 @@ function Editor() {
     const unlisten = listen<{ dataUrl?: string, target: string }>("load-image", async (e) => {
       if (e.payload.target !== "main") return;
       await updateTargetColorSpace();
+      
+      const settings = await loadSettings();
+      setHighlighterMode(settings.highlighterMode || "normal");
 
       try {
         await getCurrentWindow().center();
@@ -802,8 +833,8 @@ function Editor() {
     const drawAnn = (ann: Annotation) => {
       ctx.strokeStyle = ann.color;
       ctx.lineWidth = ann.lineWidth;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
+      ctx.lineCap = ann.tool === "highlighter" ? "butt" : "round";
+      ctx.lineJoin = ann.tool === "highlighter" ? "miter" : "round";
       
       if (ann.tool === "rect" && ann.rect) {
         ctx.strokeRect(ann.rect.x, ann.rect.y, ann.rect.w, ann.rect.h);
@@ -839,6 +870,17 @@ function Editor() {
           ctx.lineTo(ann.points[i].x, ann.points[i].y);
         }
         ctx.stroke();
+      } else if (ann.tool === "highlighter" && ann.points.length > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = ann.highlighterMode === "multiply" ? "multiply" : "source-over";
+        ctx.globalAlpha = ann.highlighterMode === "multiply" ? 1.0 : 0.4;
+        ctx.beginPath();
+        ctx.moveTo(ann.points[0].x, ann.points[0].y);
+        for (let i = 1; i < ann.points.length; i++) {
+          ctx.lineTo(ann.points[i].x, ann.points[i].y);
+        }
+        ctx.stroke();
+        ctx.restore();
       } else if (ann.tool === "arrow" && ann.points.length >= 2) {
          const start = ann.points[0];
          const end = ann.points[ann.points.length - 1];
@@ -951,7 +993,7 @@ function Editor() {
     
     const pos = getMousePos(e);
     setIsDrawing(true);
-    setCurrentAnnotation({ tool: currentTool!, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }});
+    setCurrentAnnotation({ tool: currentTool!, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }, highlighterMode });
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -962,6 +1004,22 @@ function Editor() {
       if (!prev) return prev;
       if (prev.tool === "freehand") {
         return { ...prev, points: [...prev.points, pos] };
+      }
+      if (prev.tool === "highlighter") {
+        if (!e.shiftKey) {
+          return { ...prev, points: [...prev.points, pos] };
+        } else {
+          const startPos = prev.points[0];
+          const diffX = pos.x - startPos.x;
+          const diffY = pos.y - startPos.y;
+          const isHorizontal = Math.abs(diffX) > Math.abs(diffY);
+          
+          const constrainedPos = isHorizontal 
+            ? { x: pos.x, y: startPos.y } 
+            : { x: startPos.x, y: pos.y };
+            
+          return { ...prev, points: [startPos, constrainedPos] };
+        }
       }
       if (prev.tool === "rect" || prev.tool === "blur" || prev.tool === "circle") {
         const startPos = prev.points[0];
@@ -1130,6 +1188,8 @@ function Editor() {
         setCurrentTool("blur");
       } else if (e.key === '6') {
         setCurrentTool("text");
+      } else if (e.key === '7') {
+        setCurrentTool("highlighter");
       } else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
         if (e.shiftKey) {
           handleRedo();
@@ -1151,20 +1211,21 @@ function Editor() {
   }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing, activeText]);
 
   return (
-    <main className="w-screen h-screen bg-navy-900 overflow-hidden relative">
-      {errorMsg && <div className="absolute top-0 left-0 w-full p-4 bg-red-600 text-white z-50 overflow-auto max-h-full font-mono text-sm">{errorMsg}</div>}
+    <main className="w-screen h-screen bg-zinc-950 overflow-hidden relative selection:bg-blue-500/30">
+      {errorMsg && <div className="absolute top-0 left-0 w-full p-2 bg-red-900 text-red-100 border-b border-red-800 z-50 overflow-auto max-h-full font-mono text-[11px] text-center">{errorMsg}</div>}
       
       {baseImage ? (
         <>
-          <header className="absolute top-0 left-0 right-0 h-16 px-6 flex items-center justify-between border-b border-navy-700 bg-navy-800 shadow-sm z-10">
-            <div className="flex gap-2">
+          <header className="absolute top-0 left-0 right-0 h-12 px-4 flex items-center justify-between border-b border-zinc-800/80 bg-zinc-900/50 backdrop-blur-md shadow-sm z-10">
+            <div className="flex gap-1">
               {[
-                { id: "rect", icon: <Square size={18} /> },
-                { id: "circle", icon: <Circle size={18} /> },
-                { id: "arrow", icon: <ArrowRight size={18} /> },
-                { id: "freehand", icon: <Pen size={18} /> },
-                { id: "blur", icon: <Droplet size={18} /> },
-                { id: "text", icon: <Type size={18} /> }
+                { id: "rect", icon: <Square size={16} /> },
+                { id: "circle", icon: <Circle size={16} /> },
+                { id: "arrow", icon: <ArrowRight size={16} /> },
+                { id: "freehand", icon: <Pen size={16} /> },
+                { id: "blur", icon: <Droplet size={16} /> },
+                { id: "text", icon: <Type size={16} /> },
+                { id: "highlighter", icon: <Highlighter size={16} /> }
               ].map((toolObj, idx) => (
                 <button 
                   key={toolObj.id}
@@ -1174,16 +1235,15 @@ function Editor() {
                     }
                   }}
                   onClick={() => setCurrentTool(toolObj.id as Tool)}
-                  className={`p-2 rounded-md transition-colors duration-200 relative group flex items-center justify-center ${currentTool === toolObj.id ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-navy-600 text-indigo-200 hover:text-white'}`}
+                  className={`p-1.5 rounded-md transition-all duration-200 relative group flex items-center justify-center ${currentTool === toolObj.id ? 'bg-blue-500/20 text-blue-400 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.3)]' : 'hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
                 >
                   {toolObj.icon}
                   
-                  <span className="absolute -top-1 -right-1 bg-navy-900 text-navy-400 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-navy-700 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                  <span className="absolute -top-1 -right-1 bg-zinc-900 text-zinc-400 text-[9px] w-3.5 h-3.5 rounded-full flex items-center justify-center border border-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                     {idx + 1}
                   </span>
                   
-                  {/* Tooltip centralizado abaixo (apenas nome) */}
-                  <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
+                  <div className="absolute top-full mt-1.5 bg-zinc-800 text-zinc-200 text-[10px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 border border-zinc-700 flex items-center justify-center left-1/2 -translate-x-1/2">
                     {t(`app.${toolObj.id}`) !== `app.${toolObj.id}` ? t(`app.${toolObj.id}`) : toolObj.id.charAt(0).toUpperCase() + toolObj.id.slice(1)}
                   </div>
                 </button>
@@ -1192,11 +1252,11 @@ function Editor() {
             
             <div className="flex items-center gap-3">
               {currentTool === "text" ? (
-                <div className="flex items-center gap-3 mr-4 border-r border-navy-600 pr-4">
+                <div className="flex items-center gap-3 mr-3 border-r border-zinc-800/80 pr-3">
                   <select
                     value={fontFamily}
                     onChange={(e) => setFontFamily(e.target.value)}
-                    className="bg-navy-700 text-white border border-navy-600 rounded-md px-2 py-1 text-sm outline-none focus:border-indigo-500"
+                    className="bg-zinc-800 text-zinc-200 border border-zinc-700 rounded-md px-2 py-1 text-xs outline-none focus:border-blue-500/50 transition-colors"
                   >
                     <option value="Inter">Inter</option>
                     <option value="Arial">Arial</option>
@@ -1206,68 +1266,87 @@ function Editor() {
                   </select>
                   
                   <div className="flex items-center gap-2">
-                    <span className="text-navy-300 text-xs font-medium">{t('app.font_size')}:</span>
+                    <span className="text-zinc-500 text-[11px] font-medium">{t('app.font_size')}:</span>
                     <FontSizeSelector value={fontSize} onChange={setFontSize} />
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 mr-4 border-r border-navy-600 pr-4">
-                  <span className="text-navy-300 text-xs font-medium">{t('app.thickness')}:</span>
+                <div className="flex items-center gap-2 mr-3 border-r border-zinc-800/80 pr-3">
+                  {currentTool === "highlighter" && (
+                    <select
+                      value={highlighterMode}
+                      onChange={async (e) => {
+                        const val = e.target.value as "normal" | "multiply";
+                        setHighlighterMode(val);
+                        const { saveSettings } = await import('./store');
+                        const settings = await loadSettings();
+                        settings.highlighterMode = val;
+                        await saveSettings(settings);
+                      }}
+                      className="bg-zinc-800 text-zinc-200 border border-zinc-700 rounded-md px-2 py-1 text-xs outline-none focus:border-blue-500/50 transition-colors mr-2"
+                    >
+                      <option value="normal">{t('settings.highlighter_normal', 'Normal')}</option>
+                      <option value="multiply">{t('settings.highlighter_multiply', 'Multiply')}</option>
+                    </select>
+                  )}
+                  <span className="text-zinc-500 text-[11px] font-medium">{t('app.thickness')}:</span>
                   <input 
                     type="range" 
                     min="2" max="30" 
                     value={lineWidth}
                     onChange={e => setLineWidth(Number(e.target.value))}
-                    className="w-24 accent-indigo-500"
+                    className="w-20 accent-blue-500"
                   />
-                  <span className="text-navy-300 text-xs w-4 text-center">{lineWidth}</span>
+                  <span className="text-zinc-400 text-[11px] w-4 text-center">{lineWidth}</span>
                 </div>
               )}
               
-              <span className="text-navy-300 text-xs font-medium">{t('app.color')}:</span>
-              <button 
-                onClick={() => setIsEyedropperActive(!isEyedropperActive)}
-                className={`p-2 rounded-md transition-colors duration-200 relative group flex items-center justify-center ${isEyedropperActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-200 hover:bg-navy-600 hover:text-white'}`}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
-                <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
-                  Eyedropper (Cmd+Click)
-                </div>
-              </button>
-              <input 
-                ref={colorInputRef}
-                type="color" 
-                value={currentColor}
-                onChange={e => setCurrentColor(e.target.value)}
-                className="w-8 h-8 rounded-full cursor-pointer bg-transparent border-0 outline-none hover:scale-105 transition-transform"
-              />
+              <div className="flex items-center gap-1.5">
+                <span className="text-zinc-500 text-[11px] font-medium">{t('app.color')}:</span>
+                <button 
+                  onClick={() => setIsEyedropperActive(!isEyedropperActive)}
+                  className={`p-1.5 rounded-md transition-colors duration-200 relative group flex items-center justify-center ${isEyedropperActive ? 'bg-blue-500/20 text-blue-400 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.3)]' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+                  <div className="absolute top-full mt-1.5 bg-zinc-800 text-zinc-200 text-[10px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 border border-zinc-700 flex items-center justify-center left-1/2 -translate-x-1/2">
+                    Eyedropper (Cmd+Click)
+                  </div>
+                </button>
+                <input 
+                  ref={colorInputRef}
+                  type="color" 
+                  value={currentColor}
+                  onChange={e => setCurrentColor(e.target.value)}
+                  className="w-6 h-6 rounded-full cursor-pointer bg-transparent border-0 outline-none hover:scale-110 transition-transform"
+                />
+              </div>
             </div>
             
-            <div className="flex gap-2 items-center">
-              <button onClick={handleUndo} disabled={annotations.length === 0} className="p-2 text-sm font-medium rounded-md bg-navy-700 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors relative group flex items-center justify-center">
-                <Undo size={16} />
-                <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
+            <div className="flex gap-1.5 items-center">
+              <button onClick={handleUndo} disabled={annotations.length === 0} className="p-1.5 text-xs font-medium rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-300 transition-colors relative group flex items-center justify-center">
+                <Undo size={14} />
+                <div className="absolute top-full mt-1.5 bg-zinc-800 text-zinc-200 text-[10px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg border border-zinc-700 z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
                   Undo (Cmd+Z)
                 </div>
               </button>
-              <button onClick={handleRedo} disabled={redoStack.length === 0} className="p-2 text-sm font-medium rounded-md bg-navy-700 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors relative group flex items-center justify-center">
-                <Redo size={16} />
-                <div className="absolute top-full mt-1 bg-navy-950 text-white text-[11px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
+              <button onClick={handleRedo} disabled={redoStack.length === 0} className="p-1.5 text-xs font-medium rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-300 transition-colors relative group flex items-center justify-center">
+                <Redo size={14} />
+                <div className="absolute top-full mt-1.5 bg-zinc-800 text-zinc-200 text-[10px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg border border-zinc-700 z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
                   Redo (Cmd+Y)
                 </div>
               </button>
-              <div className="w-px h-6 bg-navy-600 mx-1"></div>
-              <button onClick={handleCopy} className="px-4 py-1.5 text-sm font-medium rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+              <div className="w-px h-4 bg-zinc-800 mx-1"></div>
+              <button onClick={handleCopy} className="px-3 py-1 text-[11px] font-medium rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/50 transition-colors">
                 Copy
               </button>
-              <button onClick={handleSave} className="px-4 py-1.5 text-sm font-medium rounded-md bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
+              <button onClick={handleSave} className="px-3 py-1 text-[11px] font-medium rounded-md bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition-colors">
                 Save
               </button>
             </div>
           </header>
 
           {/* Canvas Wrapper */}
-          <div className="absolute top-16 bottom-0 left-0 right-0 bg-navy-900 p-6">
+          <div className="absolute top-12 bottom-0 left-0 right-0 bg-zinc-950 p-4">
             <div className="relative w-full h-full">
               <canvas 
                 ref={canvasRef} 
@@ -1294,7 +1373,7 @@ function Editor() {
                     }
                   }
                 }}
-                className={`shadow-2xl rounded-sm ${isEyedropperActive ? "cursor-crosshair" : (currentTool === "freehand" ? "cursor-default" : (currentTool ? "cursor-crosshair" : "cursor-default"))}`} 
+                className={`shadow-2xl rounded-sm ring-1 ring-zinc-800/50 ${isEyedropperActive ? "cursor-crosshair" : (currentTool === "freehand" ? "cursor-default" : (currentTool ? "cursor-crosshair" : "cursor-default"))}`} 
                 style={{ 
                   position: 'absolute',
                   top: '50%',
@@ -1368,10 +1447,10 @@ function Editor() {
           </div>
         </>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center p-8">
-           <header className="mb-8 text-center">
-             <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight drop-shadow-lg opacity-80">Specture</h1>
-             <p className="text-indigo-400 text-sm font-medium opacity-60">{t('app.ready_in_background')}</p>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 h-full">
+           <header className="text-center">
+             <h1 className="text-3xl font-extrabold text-zinc-200 mb-2 tracking-tight opacity-90">Specture</h1>
+             <p className="text-blue-500/80 text-xs font-medium uppercase tracking-wider">{t('app.ready_in_background')}</p>
            </header>
         </div>
       )}

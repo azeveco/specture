@@ -23,6 +23,7 @@ export interface SpectureSettings {
   enableDebugLogs: boolean;
   colorSpaceMode: "auto" | "srgb" | "display-p3";
   language: string;
+  highlighterMode: "normal" | "multiply";
 }
 
 export const defaultSettings: SpectureSettings = {
@@ -40,6 +41,7 @@ export const defaultSettings: SpectureSettings = {
   enableDebugLogs: false,
   colorSpaceMode: "auto",
   language: "en",
+  highlighterMode: "normal"
 };
 
 export async function loadSettings(): Promise<SpectureSettings> {
