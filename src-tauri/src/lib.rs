@@ -1,13 +1,10 @@
 use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
     Manager, Builder, Emitter
 };
 use xcap::Monitor;
 use std::sync::Mutex;
 use tauri::State;
-use std::fs::File;
-use std::io::Write;
 use std::thread;
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};

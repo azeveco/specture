@@ -1,4 +1,4 @@
-use image::{RgbaImage, GenericImageView};
+use image::RgbaImage;
 
 /// Stitches a list of vertical scrolling screenshots together.
 pub fn stitch_frames(frames: Vec<RgbaImage>) -> Option<RgbaImage> {
