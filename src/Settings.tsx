@@ -233,7 +233,7 @@ export default function Settings() {
             {activeTab === 'shortcuts' && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <Panel title={t('settings.global_shortcuts')} description={t('settings.shortcut_modifiers_hint')}>
-                  <ShortcutInput label={t('settings.open_control_panel')} value={settings.shortcutControlPanel} onChange={(val) => updateSetting('shortcutControlPanel', val)} />
+                  <ShortcutInput label={t('settings.open_capture_menu')} value={settings.shortcutCaptureMenu} onChange={(val) => updateSetting('shortcutCaptureMenu', val)} />
                   <ShortcutInput label={t('settings.capture_full_screen')} value={settings.shortcutFullScreen} onChange={(val) => updateSetting('shortcutFullScreen', val)} />
                   <ShortcutInput label={t('settings.capture_region')} value={settings.shortcutRegion} onChange={(val) => updateSetting('shortcutRegion', val)} />
                   <ShortcutInput label={t('settings.capture_window')} value={settings.shortcutWindow} onChange={(val) => updateSetting('shortcutWindow', val)} />

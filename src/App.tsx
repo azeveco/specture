@@ -81,9 +81,9 @@ interface WindowInfo {
 }
 
 // ----------------------------------------------------
-// Control Panel Window
+// Capture Menu Window
 // ----------------------------------------------------
-function ControlPanel() {
+function CaptureMenu() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -93,7 +93,7 @@ function ControlPanel() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      // Hide the control panel window before capturing so it's not visible in the screenshot
+      // Hide the capture menu window before capturing so it's not visible in the screenshot
       await getCurrentWindow().hide();
       await new Promise(r => setTimeout(r, 200));
       
@@ -128,7 +128,7 @@ function ControlPanel() {
     };
     window.addEventListener('keydown', handleKeyDown);
     
-    const unlisten = listen("open-control-panel-for-scrolling", async () => {
+    const unlisten = listen("open-capture-menu-for-scrolling", async () => {
       setIsScrollingSetup(true);
       await getCurrentWindow().show();
       await getCurrentWindow().setFocus();
@@ -150,7 +150,7 @@ function ControlPanel() {
           await win.setPosition(new LogicalPosition(x, y));
         }
       } catch (err) {
-         console.warn("Failed to set control panel position", err);
+         console.warn("Failed to set capture menu position", err);
       }
     });
     
@@ -1615,7 +1615,7 @@ function MainApp() {
             
             // Update system tray menu language
             invoke('update_tray_menu', {
-              openControlPanel: i18n.t('settings.open_control_panel') || 'Open Control Panel',
+              openCaptureMenu: i18n.t('settings.open_capture_menu') || 'Open Capture Menu',
               captureFullscreen: i18n.t('settings.capture_full_screen') || 'Capture Full Screen',
               captureRegion: i18n.t('settings.capture_region') || 'Capture Region',
               captureWindow: i18n.t('settings.capture_window') || 'Capture Window',
@@ -1703,8 +1703,8 @@ function MainApp() {
                 }
               }
 
-              if (mode === "control") {
-                const cp = await Window.getByLabel("control-panel");
+              if (mode === "capture_menu") {
+                const cp = await Window.getByLabel("capture-menu");
                 if (cp) {
                   const isVis = await cp.isVisible();
                   if (isVis) {
@@ -1715,15 +1715,16 @@ function MainApp() {
                   }
                 } else {
                   const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-                  new WebviewWindow('control-panel', {
-                    url: '/?mode=control-panel',
+                  new WebviewWindow('capture-menu', {
+                    url: '/?mode=capture-menu',
                     title: 'Specture Options',
                     width: 400,
                     height: 160,
                     decorations: false,
                     transparent: true,
                     alwaysOnTop: true,
-                    resizable: false
+                    resizable: false,
+                    shadow: false
                   });
                 }
               } else if (mode === "settings") {
@@ -1743,7 +1744,7 @@ function MainApp() {
                   });
                 }
               } else {
-                const cp = await Window.getByLabel("control-panel");
+                const cp = await Window.getByLabel("capture-menu");
                 if (cp) await cp.hide();
 
                 // slight delay to let CP hide
@@ -1768,7 +1769,7 @@ function MainApp() {
           const handleShortcut = async (firedShortcut: string) => {
             let mode = null;
             const normFired = normalizeShortcut(firedShortcut);
-            if (normFired === normalizeShortcut(settings.shortcutControlPanel)) mode = "control";
+            if (normFired === normalizeShortcut(settings.shortcutCaptureMenu)) mode = "capture_menu";
             else if (normFired === normalizeShortcut(settings.shortcutFullScreen)) mode = "fullscreen";
             else if (normFired === normalizeShortcut(settings.shortcutRegion)) mode = "region";
             else if (normFired === normalizeShortcut(settings.shortcutWindow)) mode = "window";
@@ -1780,7 +1781,7 @@ function MainApp() {
           const { invoke } = await import('@tauri-apps/api/core');
           await invoke('register_shortcuts', { 
             shortcuts: [
-              settings.shortcutControlPanel, 
+              settings.shortcutCaptureMenu, 
               settings.shortcutFullScreen, 
               settings.shortcutRegion,
               settings.shortcutWindow,
@@ -1838,7 +1839,7 @@ function MainApp() {
          unlistenSettings.then(f => f());
       };
     } else {
-      // For all other windows (Control Panel, Region Selector, Editor), ensure language updates dynamically
+      // For all other windows (Capture Menu, Editor), ensure language updates dynamically
       const applyLanguage = async () => {
          const settings = await loadSettings();
          if (settings.language) {
@@ -1868,7 +1869,7 @@ function MainApp() {
 
   if (!label) return null;
 
-  if (label === "control-panel") return <ControlPanel />;
+  if (label === "capture-menu") return <CaptureMenu />;
   if (label === "settings") return <Settings />;
   return <Editor />;
 }

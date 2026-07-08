@@ -34,7 +34,7 @@ struct AppState {
 }
 
 struct TrayStrings {
-    open_control_panel: String,
+    open_capture_menu: String,
     capture_fullscreen: String,
     capture_region: String,
     capture_window: String,
@@ -48,7 +48,7 @@ struct TrayState(Mutex<TrayStrings>);
 impl Default for TrayState {
     fn default() -> Self {
         Self(Mutex::new(TrayStrings {
-            open_control_panel: "Open Control Panel".into(),
+            open_capture_menu: "Open Capture Menu".into(),
             capture_fullscreen: "Capture Full Screen".into(),
             capture_region: "Capture Region".into(),
             capture_window: "Capture Window".into(),
@@ -233,7 +233,7 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                 let s = app_clone.state::<TrayState>();
                 let lock = s.0.lock().unwrap();
                 (
-                    lock.open_control_panel.clone(),
+                    lock.open_capture_menu.clone(),
                     lock.capture_fullscreen.clone(),
                     lock.capture_region.clone(),
                     lock.capture_window.clone(),
@@ -251,7 +251,7 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                             if let Ok(window_i) = MenuItemBuilder::with_id("window", strings.3).build(&app_clone) {
                                 if let Ok(region_i) = MenuItemBuilder::with_id("region", strings.2).build(&app_clone) {
                                     if let Ok(full_i) = MenuItemBuilder::with_id("fullscreen", strings.1).build(&app_clone) {
-                                        if let Ok(control_i) = MenuItemBuilder::with_id("control", strings.0).build(&app_clone) {
+                                        if let Ok(control_i) = MenuItemBuilder::with_id("capture_menu", strings.0).build(&app_clone) {
                                             if let Ok(menu) = MenuBuilder::new(&app_clone).items(&[
                                                 &control_i, &full_i, &region_i, &window_i, &scrolling_i, &sep, &settings_i, &quit_i
                                             ]).build() {
@@ -486,7 +486,7 @@ fn capture_window(id: u32, state: State<'_, AppState>) -> Result<(), String> {
 fn update_tray_menu(
     app: AppHandle, 
     state: State<'_, TrayState>, 
-    open_control_panel: String, 
+    open_capture_menu: String, 
     capture_fullscreen: String, 
     capture_region: String, 
     capture_window: String, 
@@ -496,7 +496,7 @@ fn update_tray_menu(
 ) -> Result<(), String> {
     {
         let mut s = state.0.lock().unwrap();
-        s.open_control_panel = open_control_panel.clone();
+        s.open_capture_menu = open_capture_menu.clone();
         s.capture_fullscreen = capture_fullscreen.clone();
         s.capture_region = capture_region.clone();
         s.capture_window = capture_window.clone();
@@ -509,7 +509,7 @@ fn update_tray_menu(
         use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
         let menu = MenuBuilder::new(&app)
             .items(&[
-                &MenuItemBuilder::with_id("control", open_control_panel).build(&app).unwrap(),
+                &MenuItemBuilder::with_id("capture_menu", open_capture_menu).build(&app).unwrap(),
                 &MenuItemBuilder::with_id("fullscreen", capture_fullscreen).build(&app).unwrap(),
                 &MenuItemBuilder::with_id("region", capture_region).build(&app).unwrap(),
                 &MenuItemBuilder::with_id("window", capture_window).build(&app).unwrap(),
@@ -555,7 +555,7 @@ pub fn run() {
                 let s = app.state::<TrayState>();
                 let lock = s.0.lock().unwrap();
                 (
-                    lock.open_control_panel.clone(),
+                    lock.open_capture_menu.clone(),
                     lock.capture_fullscreen.clone(),
                     lock.capture_region.clone(),
                     lock.capture_window.clone(),
@@ -573,7 +573,7 @@ pub fn run() {
             let window_i = MenuItemBuilder::with_id("window", strings.3).build(app)?;
             let region_i = MenuItemBuilder::with_id("region", strings.2).build(app)?;
             let full_i = MenuItemBuilder::with_id("fullscreen", strings.1).build(app)?;
-            let control_i = MenuItemBuilder::with_id("control", strings.0).build(app)?;
+            let control_i = MenuItemBuilder::with_id("capture_menu", strings.0).build(app)?;
             
             let menu = MenuBuilder::new(app).items(&[
                 &control_i, &full_i, &region_i, &window_i, &scrolling_i, &sep, &settings_i, &quit_i

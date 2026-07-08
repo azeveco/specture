@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "control-panel", "region-selector", "settings", "stop-recording"],
+  "windows": ["main", "capture-menu", "region-selector", "settings", "stop-recording"],
   "permissions": [
     "autostart:default",
     "core:default",
