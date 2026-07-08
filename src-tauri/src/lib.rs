@@ -1,20 +1,15 @@
-use tauri::{
-    tray::TrayIconBuilder,
-    Manager, Builder, Emitter
-};
+use tauri::{AppHandle, Manager, State, Builder, Emitter, tray::TrayIconBuilder};
 use xcap::Monitor;
-use std::sync::Mutex;
-use tauri::State;
+use enigo::{Enigo, Mouse, Axis};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use image::ImageEncoder;
 mod stitcher;
 
 #[tauri::command]
-fn register_shortcuts(app: tauri::AppHandle, shortcuts: Vec<String>) -> Result<(), String> {
+fn register_shortcuts(app: AppHandle, shortcuts: Vec<String>) -> Result<(), String> {
     // Unregister any existing shortcuts
     let _ = app.global_shortcut().unregister_all();
     
@@ -73,7 +68,7 @@ impl Default for RecordingState {
     fn default() -> Self {
         Self {
             frames: Arc::new(Mutex::new(Vec::new())),
-            is_recording: Arc::new(AtomicBool::new(false)),
+            is_recording: Arc::new(AtomicBool::new(true)),
         }
     }
 }
@@ -107,15 +102,15 @@ async fn take_screenshot(state: State<'_, AppState>, window: tauri::WebviewWindo
 
 #[tauri::command]
 fn get_image_buffer(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
-    if let Some(bytes) = state.image_buffer.lock().unwrap().as_ref() {
-        Ok(tauri::ipc::Response::new(bytes.clone()))
+    if let Some(bytes) = state.image_buffer.lock().unwrap().take() {
+        Ok(tauri::ipc::Response::new(bytes))
     } else {
         Err("No image buffer found".into())
     }
 }
 
 #[tauri::command]
-fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::WebviewWindow, app: tauri::AppHandle, x: u32, y: u32, w: u32, h: u32, max_duration_seconds: u64) -> Result<(), String> {
+fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::WebviewWindow, app: AppHandle, x: u32, y: u32, w: u32, h: u32, max_duration_seconds: u64) -> Result<(), String> {
     log_debug(format!("start_scrolling_capture called. rect: {},{},{},{}", x, y, w, h));
     state.is_recording.store(true, Ordering::SeqCst);
     state.frames.lock().unwrap().clear();
@@ -150,6 +145,13 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
     let frames = state.frames.clone();
 
     thread::spawn(move || {
+        let mut enigo = Enigo::new(&enigo::Settings::default()).unwrap();
+        let mut last_frame: Option<image::RgbaImage> = None;
+        let mut identical_frames_count = 0;
+        
+        // Wait for window to hide
+        thread::sleep(Duration::from_millis(500));
+        
         let start_time = std::time::Instant::now();
         
         while is_recording.load(Ordering::SeqCst) {
@@ -170,9 +172,40 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
 
             if let Ok(image) = monitor.capture_image() {
                 let img_cropped = image::imageops::crop_imm(&image, x, y, w, h).to_image();
+                
+                // Compare with last frame to detect if we reached the bottom
+                if let Some(last) = &last_frame {
+                    let mut diff_count = 0;
+                    let raw1 = last.as_raw();
+                    let raw2 = img_cropped.as_raw();
+                    for i in (0..raw1.len()).step_by(16) {
+                        if raw1.get(i) != raw2.get(i) {
+                            diff_count += 1;
+                        }
+                    }
+                    if diff_count < 100 { // Allow some noise/blinking cursor
+                        identical_frames_count += 1;
+                    } else {
+                        identical_frames_count = 0;
+                    }
+                }
+                
+                if identical_frames_count >= 3 {
+                    // Reached the bottom (3 consecutive frames without change despite scrolling)
+                    is_recording.store(false, Ordering::SeqCst);
+                    let _ = app.emit("scrolling-stopped", ());
+                    break;
+                }
+                
+                last_frame = Some(img_cropped.clone());
                 frames.lock().unwrap().push(img_cropped);
             }
-            thread::sleep(Duration::from_millis(200));
+            
+            // Scroll down: Use a moderate scroll value. 
+            // The previous value of 40 was too high, causing zero overlap between frames.
+            let _ = enigo.scroll(10, Axis::Vertical);
+            
+            thread::sleep(Duration::from_millis(250));
         }
         
         let app_clone = app.clone();
@@ -291,7 +324,7 @@ fn is_scrolling_active(state: State<'_, RecordingState>) -> bool {
     state.is_recording.load(Ordering::SeqCst)
 }
 
-static DEBUG_LOGS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DEBUG_LOGS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 #[tauri::command]
 fn set_debug_logs_enabled(enabled: bool) {
@@ -440,7 +473,7 @@ fn capture_window(id: u32, state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn update_tray_menu(
-    app: tauri::AppHandle, 
+    app: AppHandle, 
     state: State<'_, TrayState>, 
     open_control_panel: String, 
     capture_fullscreen: String, 
@@ -549,6 +582,20 @@ pub fn run() {
                         if let Some(window) = app.get_webview_window("settings") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                        } else {
+                            if let Ok(window) = tauri::WebviewWindowBuilder::new(
+                                app,
+                                "settings",
+                                tauri::WebviewUrl::App("/?mode=settings".into())
+                            )
+                            .title("Specture Settings")
+                            .inner_size(900.0, 550.0)
+                            .resizable(false)
+                            .center()
+                            .build() {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
                     }
                     action => {

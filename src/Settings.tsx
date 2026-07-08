@@ -225,16 +225,6 @@ export default function Settings() {
                     />
                   </SettingRow>
 
-                  <SettingRow label={t('settings.highlighter_mode', 'Highlighter Default Mode')}>
-                    <select 
-                      value={settings.highlighterMode || "normal"}
-                      onChange={(e) => updateSetting('highlighterMode', e.target.value as "normal" | "multiply")}
-                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
-                    >
-                      <option value="normal">{t('settings.highlighter_normal', 'Normal Transparency')}</option>
-                      <option value="multiply">{t('settings.highlighter_multiply', 'Multiply Blend')}</option>
-                    </select>
-                  </SettingRow>
                 </Panel>
               </div>
             )}
@@ -275,6 +265,30 @@ export default function Settings() {
             {/* CAPTURE TAB */}
             {activeTab === 'capture' && (
               <div className="space-y-6 animate-in fade-in duration-200">
+                <Panel title={t('settings.editor_tools', 'Editor Tools')} description={t('settings.editor_tools_hint', 'Configure the default behavior for the capture editor.')}>
+                  <SettingRow label={t('settings.highlighter_mode', 'Highlighter Default Mode')}>
+                    <select 
+                      value={settings.highlighterMode || "normal"}
+                      onChange={(e) => updateSetting('highlighterMode', e.target.value as "normal" | "multiply")}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="normal">{t('settings.highlighter_normal', 'Normal Transparency')}</option>
+                      <option value="multiply">{t('settings.highlighter_multiply', 'Multiply Blend')}</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.toolbar_position', 'Default Toolbar Position')}>
+                    <select 
+                      value={settings.toolbarPosition || "bottom"}
+                      onChange={(e) => updateSetting('toolbarPosition', e.target.value as "bottom" | "top")}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="bottom">{t('settings.position_bottom', 'Bottom')}</option>
+                      <option value="top">{t('settings.position_top', 'Top')}</option>
+                    </select>
+                  </SettingRow>
+                </Panel>
+                
                 <Panel title={t('settings.scrolling_capture')} description={t('settings.max_duration_hint')}>
                   <SettingRow label={t('settings.stop_button_position')}>
                     <select 

@@ -24,6 +24,7 @@ export interface SpectureSettings {
   colorSpaceMode: "auto" | "srgb" | "display-p3";
   language: string;
   highlighterMode: "normal" | "multiply";
+  toolbarPosition: "bottom" | "top";
 }
 
 export const defaultSettings: SpectureSettings = {
@@ -41,7 +42,8 @@ export const defaultSettings: SpectureSettings = {
   enableDebugLogs: false,
   colorSpaceMode: "auto",
   language: "en",
-  highlighterMode: "normal"
+  highlighterMode: "normal",
+  toolbarPosition: "bottom"
 };
 
 export async function loadSettings(): Promise<SpectureSettings> {

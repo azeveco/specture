@@ -74,9 +74,10 @@ fn find_displacement(img1: &RgbaImage, img2: &RgbaImage) -> i32 {
     let stride2 = (img2.width() * 4) as i32;
 
     // Helper closure to compute diff for a given d and steps
+    // Returns Option<u64> representing the MSE over high-contrast edges.
     let compute_diff = |d: i32, step_x: usize, step_y: i32| -> Option<u64> {
         let mut diff = 0u64;
-        let mut count = 0;
+        let mut edge_count = 0u64;
         
         let start_y = header_margin.max(header_margin - d);
         let end_y = (h_i32 - footer_margin).min(h_i32 - footer_margin - d);
@@ -90,51 +91,51 @@ fn find_displacement(img1: &RgbaImage, img2: &RgbaImage) -> i32 {
             while x < w_usize.saturating_sub(margin_x) {
                 let px = x * 4;
                 
-                if row1_idx + px + 2 < raw1.len() && row2_idx + px + 2 < raw2.len() {
+                if row1_idx + px + 6 < raw1.len() && row2_idx + px + 2 < raw2.len() {
                     let r1 = raw1[row1_idx + px] as i32;
                     let g1 = raw1[row1_idx + px + 1] as i32;
                     let b1 = raw1[row1_idx + px + 2] as i32;
                     
-                    let r2 = raw2[row2_idx + px] as i32;
-                    let g2 = raw2[row2_idx + px + 1] as i32;
-                    let b2 = raw2[row2_idx + px + 2] as i32;
+                    // Check if pixel is an edge in img1 by comparing to its right neighbor (4 bytes away)
+                    let r1_n = raw1[row1_idx + px + 4] as i32;
+                    let g1_n = raw1[row1_idx + px + 5] as i32;
+                    let b1_n = raw1[row1_idx + px + 6] as i32;
                     
-                    diff += (r1 - r2).abs() as u64;
-                    diff += (g1 - g2).abs() as u64;
-                    diff += (b1 - b2).abs() as u64;
-                    count += 1;
+                    // If the absolute difference is > 30, it's a significant edge (text, border, icon)
+                    if (r1 - r1_n).abs() + (g1 - g1_n).abs() + (b1 - b1_n).abs() > 30 {
+                        let r2 = raw2[row2_idx + px] as i32;
+                        let g2 = raw2[row2_idx + px + 1] as i32;
+                        let b2 = raw2[row2_idx + px + 2] as i32;
+                        
+                        let dr = (r1 - r2) as i64;
+                        let dg = (g1 - g2) as i64;
+                        let db = (b1 - b2) as i64;
+                        
+                        diff += (dr * dr) as u64;
+                        diff += (dg * dg) as u64;
+                        diff += (db * db) as u64;
+                        edge_count += 1;
+                    }
                 }
                 x += step_x;
             }
             y += step_y;
         }
         
-        if count > 0 {
-            Some(diff / count)
+        // If there are less than 50 edge pixels in the matched region, we discard it 
+        // to avoid matching solid blocks of color or areas with no defining features.
+        if edge_count > 50 {
+            Some(diff / edge_count)
         } else {
             None
         }
     };
     
-    // Coarse Search
-    let mut coarse_d = -max_d;
-    while coarse_d <= max_d {
-        if let Some(avg_diff) = compute_diff(coarse_d, 64, 32) {
-            if avg_diff < best_diff {
-                best_diff = avg_diff;
-                best_d = coarse_d;
-            }
-        }
-        coarse_d += 16;
-    }
-    
-    // Fine Search
-    best_diff = u64::MAX; // Reset best_diff for fine search precision
-    let fine_start = (best_d - 32).max(-max_d);
-    let fine_end = (best_d + 32).min(max_d);
-    
-    for d in fine_start..=fine_end {
-        if let Some(avg_diff) = compute_diff(d, 16, 8) {
+    // Dense Search: Since MSE combined with edge-detection is robust and fast, 
+    // we don't need coarse+fine. A single dense search from -20 to max_d perfectly 
+    // handles any scroll distance and gracefully avoids repeating row traps!
+    for d in -20..=max_d {
+        if let Some(avg_diff) = compute_diff(d, 8, 4) {
             if avg_diff < best_diff {
                 best_diff = avg_diff;
                 best_d = d;

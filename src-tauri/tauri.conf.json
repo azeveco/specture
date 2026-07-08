@@ -14,55 +14,12 @@
     "windows": [
       {
         "label": "main",
-        "title": "Specture Editor",
-        "width": 1000,
-        "height": 700,
+        "title": "Specture Overlay",
         "visible": false,
-        "center": true
-      },
-      {
-        "label": "control-panel",
-        "title": "Specture Options",
-        "width": 400,
-        "height": 160,
-        "visible": false,
-        "decorations": false,
         "transparent": true,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "resizable": false
-      },
-      {
-        "label": "region-selector",
-        "title": "Select Region",
-        "visible": false,
         "decorations": false,
-        "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true
-      },
-      {
-        "label": "settings",
-        "title": "Specture Settings",
-        "width": 900,
-        "height": 550,
-        "visible": false,
-        "center": true,
-        "resizable": false
-      },
-      {
-        "label": "stop-recording",
-        "title": "Stop",
-        "width": 80,
-        "height": 80,
-        "visible": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "resizable": false,
-        "skipTaskbar": true,
-        "acceptFirstMouse": true,
-        "url": "/?mode=stop-recording"
       }
     ],
     "security": {

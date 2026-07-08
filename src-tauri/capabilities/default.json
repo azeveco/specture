@@ -22,6 +22,8 @@
     "global-shortcut:default",
     "core:window:allow-hide",
     "core:window:allow-show",
+    "core:window:allow-create",
+    "core:webview:allow-create-webview-window",
     "core:window:allow-center",
     "core:window:allow-set-focus",
     "core:window:allow-set-fullscreen",
