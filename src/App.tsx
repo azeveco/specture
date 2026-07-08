@@ -263,6 +263,16 @@ function Editor() {
   }, []);
 
   useEffect(() => {
+    const win = getCurrentWindow();
+    if (overlayMode === "IDLE") {
+      win.setIgnoreCursorEvents(true).catch(console.warn);
+      win.hide().catch(console.warn);
+    } else {
+      win.setIgnoreCursorEvents(false).catch(console.warn);
+    }
+  }, [overlayMode]);
+
+  useEffect(() => {
     const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
       event.preventDefault();
       resetEditorState();
@@ -469,6 +479,8 @@ function Editor() {
         if (String(err) !== "No image buffer found") {
           setErrorMsg(String(err));
         }
+        await getCurrentWindow().hide();
+        resetEditorState();
       }
     });
     
@@ -1262,7 +1274,7 @@ function Editor() {
   }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing, activeText]);
 
   return (
-    <main className="w-screen h-screen bg-zinc-950 overflow-hidden relative selection:bg-blue-500/30">
+    <main className="w-screen h-screen bg-transparent overflow-hidden relative selection:bg-blue-500/30">
       {errorMsg && <div className="absolute top-0 left-0 w-full p-2 bg-red-900 text-red-100 border-b border-red-800 z-50 overflow-auto max-h-full font-mono text-[11px] text-center">{errorMsg}</div>}
       
       {baseImage ? (
@@ -1551,14 +1563,7 @@ function Editor() {
             </div>
           </div>
         </>
-      ) : (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 h-full">
-           <header className="text-center">
-             <h1 className="text-3xl font-extrabold text-zinc-200 mb-2 tracking-tight opacity-90">Specture</h1>
-             <p className="text-blue-500/80 text-xs font-medium uppercase tracking-wider">{t('app.ready_in_background')}</p>
-           </header>
-        </div>
-      )}
+      ) : null}
     </main>
   );
 }

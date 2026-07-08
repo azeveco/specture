@@ -68,7 +68,7 @@ impl Default for RecordingState {
     fn default() -> Self {
         Self {
             frames: Arc::new(Mutex::new(Vec::new())),
-            is_recording: Arc::new(AtomicBool::new(true)),
+            is_recording: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -145,7 +145,7 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
     let frames = state.frames.clone();
 
     thread::spawn(move || {
-        let mut enigo = Enigo::new(&enigo::Settings::default()).unwrap();
+        let mut enigo_opt = Enigo::new(&enigo::Settings::default()).ok();
         let mut last_frame: Option<image::RgbaImage> = None;
         let mut identical_frames_count = 0;
         
@@ -183,13 +183,16 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                             diff_count += 1;
                         }
                     }
-                    if diff_count < 100 { // Allow some noise/blinking cursor
+                    if diff_count < 1000 {
                         identical_frames_count += 1;
                     } else {
                         identical_frames_count = 0;
                     }
                 }
                 
+                frames.lock().unwrap().push(img_cropped.clone());
+                last_frame = Some(img_cropped);
+
                 if identical_frames_count >= 3 {
                     // Reached the bottom (3 consecutive frames without change despite scrolling)
                     is_recording.store(false, Ordering::SeqCst);
@@ -197,15 +200,23 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                     break;
                 }
                 
-                last_frame = Some(img_cropped.clone());
-                frames.lock().unwrap().push(img_cropped);
+                if let Some(enigo) = &mut enigo_opt {
+                    let _ = enigo.scroll(10, enigo::Axis::Vertical);
+                    // Wait for smooth scroll to settle
+                    thread::sleep(Duration::from_millis(300));
+                } else {
+                    // Enigo failed to initialize (likely due to missing permissions)
+                    // We cannot scroll, so we just abort after capturing the first frame.
+                    is_recording.store(false, Ordering::SeqCst);
+                    let _ = app.emit("scrolling-stopped", ());
+                    break;
+                }
+            } else {
+                // If we failed to capture screen (permissions?), break
+                is_recording.store(false, Ordering::SeqCst);
+                let _ = app.emit("scrolling-stopped", ());
+                break;
             }
-            
-            // Scroll down: Use a moderate scroll value. 
-            // The previous value of 40 was too high, causing zero overlap between frames.
-            let _ = enigo.scroll(10, Axis::Vertical);
-            
-            thread::sleep(Duration::from_millis(250));
         }
         
         let app_clone = app.clone();
