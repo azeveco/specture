@@ -9,8 +9,8 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 
 ### ✨ Key Features
 - **Multiple Capture Modes**: Full Screen, Region, Window, and long Scrolling Capture.
-- **Built-in Editor**: Annotate your screenshots instantly with arrows, rectangles, circles, freehand drawing, blur (obfuscation), text, and a realistic highlighter.
-- **Scrolling Capture**: Seamlessly capture long websites or documents without manual stitching.
+- **Built-in Editor**: Annotate your screenshots instantly with arrows, rectangles, circles, freehand drawing, blur (obfuscation), text, and a realistic highlighter. No separate windows—editing happens completely in-place via a floating toolbar.
+- **Scrolling Capture**: Seamlessly capture long websites or documents with automated scrolling and stitching.
 - **System Tray Integration**: Quietly runs in the background. Access your settings and capture modes with a single click.
 - **Multi-language Support**: Available in English, Brazilian Portuguese (`pt-BR`), and Spanish (`es`).
 - **Color Space Customization**: Choose between Auto, sRGB, and Display P3 for absolute color accuracy on Mac and other displays.
@@ -25,7 +25,7 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 | **Control Panel**<br>The minimalist area selector for choosing your capture mode. | <a href="docs/assets/control_panel.png" target="_blank"><img src="docs/assets/control_panel.png" width="500" alt="Control Panel"></a> |
 | **Scrolling Capture (Selection)**<br>Selecting the region before the auto-scroll begins. | <a href="docs/assets/scrolling_capture_selection.png" target="_blank"><img src="docs/assets/scrolling_capture_selection.png" width="500" alt="Scrolling Capture Selection"></a> |
 | **Scrolling Capture (Result)**<br>A long, seamlessly stitched webpage. <br><br>*(Click to view full 5000+ px size)* | <a href="docs/assets/scrolling_capture_output.png" target="_blank"><img src="docs/assets/scrolling_capture_output.png" height="300" style="object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid #333;" alt="Scrolling Capture Output (Click to Expand)"></a> |
-| **Built-in Editor**<br>Instantly annotate with arrows, blur, text, highlighters, and freehand drawing. | <a href="docs/assets/specture_editor.png" target="_blank"><img src="docs/assets/specture_editor.png" width="500" alt="Editor Screenshot"></a> |
+| **In-Place Editor**<br>Instantly annotate with arrows, blur, text, highlighters, and freehand drawing using the floating toolbar directly on your screen. | <a href="docs/assets/specture_editor.png" target="_blank"><img src="docs/assets/specture_editor.png" width="500" alt="Editor Screenshot"></a> |
 | **Final Result**<br>the high-quality output after saving from the editor. | <a href="docs/assets/specture_screenshot.png" target="_blank"><img src="docs/assets/specture_screenshot.png" width="500" alt="Output Screenshot"></a> |
 
 ---
@@ -81,9 +81,10 @@ When you are in the annotation window, you can use these shortcuts to speed up y
 
 | Action | Shortcut |
 | --- | --- |
-| **Select Tools** | `1` (Rect), `2` (Circle), `3` (Arrow), `4` (Freehand), `5` (Blur), `6` (Text), `7` (Highlighter) |
-| **Straight Lines Constraint** | Hold `Shift` while using the Arrow, Rectangle, or Highlighter tools |
-| **Change Brush/Font Size** | `Scroll Wheel (Up/Down)` |
+| **Select Tools** | `1` (Select), `2` (Rect), `3` (Circle), `4` (Arrow), `5` (Freehand), `6` (Blur), `7` (Text), `8` (Highlighter), `9` (Eraser) |
+| **Straight Lines / Proportions** | Hold `Shift` while using tools (Arrow snapping, perfect square/circle) |
+| **Change Brush Thickness (or Font Size if not typing)** | `[` to decrease, `]` to increase |
+| **Change Text Font Size (while typing)** | `Command + [` and `Command + ]` |
 | **Color Menu** | `Right Click anywhere on the screenshot` |
 | **Color Picker (Eyedropper)** | `Command + Click` (or `Ctrl + Click`) anywhere on the image |
 | **Undo** | `Command + Z` |
@@ -102,10 +103,16 @@ Depending on your monitor (especially on Apple devices with wide color gamuts), 
 By default, Specture copies the screenshot directly to your clipboard. If you want them saved to your disk automatically, open **Settings > Save Options** and set a `Default Save Location`. You can also configure the naming convention.
 
 **3. The Scrolling Capture didn't capture the whole page. What happened?**
-Scrolling capture relies on taking multiple screenshots while simulating scrolling. Make sure you scroll *slowly* and *smoothly*. You can also adjust the `Max Recording Duration` in the **Settings** if the capture is cutting off too early.
+Scrolling capture relies on taking multiple screenshots while simulating scrolling. To ensure a perfect capture:
+1. Trigger the scrolling capture shortcut and select the region.
+2. Specture will begin scrolling automatically. **Leave your mouse completely still** inside the scrolling window and wait for the process to finish.
+3. If it cuts off too early, you can adjust the `Max Recording Duration` in the **Settings**.
 
-**4. How do I stop a Scrolling Capture?**
-You can stop it by clicking the red `Stop` icon in your system tray, pressing your Scrolling Capture shortcut again, or clicking the floating Stop button (if you have it enabled in Settings).
+**4. How do I stop a Scrolling Capture early?**
+You can stop the automated scrolling manually at any time by:
+- Pressing the Scrolling Capture shortcut again (`Cmd + Option + 6`)
+- Clicking the red `Stop` icon in your system tray
+- Clicking the floating Stop button (if you have it enabled in Settings).
 
 **5. My screenshots are only capturing the desktop wallpaper, not my application windows. What is happening?**
 This is a macOS privacy protection feature. If Specture does not have explicit **Screen Recording** permission, macOS will hide all application windows and only allow the app to see your bare desktop wallpaper.

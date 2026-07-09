@@ -1622,7 +1622,7 @@ function Editor() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing, activeText]);
+  }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing, activeText, currentTool]);
 
   return (
     <main className="w-screen h-screen bg-transparent overflow-hidden relative selection:bg-blue-500/30">

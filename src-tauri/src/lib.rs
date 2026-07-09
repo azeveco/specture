@@ -201,7 +201,7 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                 }
                 
                 if let Some(enigo) = &mut enigo_opt {
-                    let _ = enigo.scroll(10, enigo::Axis::Vertical);
+                    let _ = enigo.scroll(10, Axis::Vertical);
                     // Wait for smooth scroll to settle
                     thread::sleep(Duration::from_millis(300));
                 } else {
