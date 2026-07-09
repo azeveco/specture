@@ -44,7 +44,10 @@
     "shortcuts": "Shortcuts",
     "editor_cheatsheet": "Editor Cheat Sheet",
     "editor_cheatsheet_desc": "Quick keyboard and mouse shortcuts for the annotation editor.",
-    "cheat_tools": "Select Tools (1-7)",
+    "cheat_tools": "Select Tools (1-9)",
+    "cheat_size": "Change Tool Size (or Font Size if not typing)",
+    "cheat_fontsize": "Change Font Size (while typing)",
+    "cheat_proportional": "Proportional shapes / Straight lines",
     "cheat_color": "Open Color Picker",
     "cheat_eyedropper": "Eyedropper Tool",
     "cheat_undo": "Undo Action",
@@ -57,7 +60,10 @@
     "click_to_set": "Click to set shortcut",
     "highlighter_mode": "Highlighter Default Mode",
     "highlighter_normal": "Normal Transparency",
-    "highlighter_multiply": "Multiply Blend"
+    "highlighter_multiply": "Multiply Blend",
+    "editor_tools": "Editor Tools",
+    "editor_tools_hint": "Configure the default behavior for the capture editor.",
+    "toolbar_position": "Default Toolbar Position"
   },
   "app": {
     "loading": "Loading...",

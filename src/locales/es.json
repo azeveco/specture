@@ -44,7 +44,10 @@
     "shortcuts": "Atajos",
     "editor_cheatsheet": "Guía de Atajos del Editor",
     "editor_cheatsheet_desc": "Atajos rápidos de teclado y ratón para el editor de anotaciones.",
-    "cheat_tools": "Seleccionar Herramientas (1-7)",
+    "cheat_tools": "Seleccionar Herramientas (1-9)",
+    "cheat_size": "Cambiar tamaño de herramienta (o de fuente si no está escribiendo)",
+    "cheat_fontsize": "Cambiar tamaño de fuente (mientras escribe)",
+    "cheat_proportional": "Formas proporcionales / Líneas rectas",
     "cheat_color": "Abrir Selector de Color",
     "cheat_eyedropper": "Cuentagotas (Seleccionar Color)",
     "cheat_undo": "Deshacer Acción",
@@ -57,7 +60,10 @@
     "click_to_set": "Haz clic para asignar atajo",
     "highlighter_mode": "Modo Predeterminado del Resaltador",
     "highlighter_normal": "Transparencia Normal",
-    "highlighter_multiply": "Multiplicar (Multiply)"
+    "highlighter_multiply": "Multiplicar (Multiply)",
+    "editor_tools": "Herramientas del Editor",
+    "editor_tools_hint": "Configurar el comportamiento predeterminado del editor de capturas.",
+    "toolbar_position": "Posición predeterminada de la barra de herramientas"
   },
   "app": {
     "loading": "Cargando...",

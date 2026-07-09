@@ -44,7 +44,10 @@
     "shortcuts": "Atalhos",
     "editor_cheatsheet": "Guia de Atalhos do Editor",
     "editor_cheatsheet_desc": "Atalhos rápidos de teclado e mouse para o editor de anotações.",
-    "cheat_tools": "Selecionar Ferramentas (1-7)",
+    "cheat_tools": "Selecionar Ferramentas (1-9)",
+    "cheat_size": "Mudar tamanho da ferramenta (ou da fonte se não estiver digitando)",
+    "cheat_fontsize": "Mudar tamanho da fonte (enquanto digita)",
+    "cheat_proportional": "Formas proporcionais / Linhas retas",
     "cheat_color": "Abrir Seletor de Cor",
     "cheat_eyedropper": "Conta-gotas (Pegar Cor)",
     "cheat_undo": "Desfazer Ação",
@@ -57,7 +60,10 @@
     "click_to_set": "Clique para definir atalho",
     "highlighter_mode": "Modo Padrão do Marca-texto",
     "highlighter_normal": "Transparência Normal",
-    "highlighter_multiply": "Efeito Multiplicar (Multiply)"
+    "highlighter_multiply": "Efeito Multiplicar (Multiply)",
+    "editor_tools": "Ferramentas do Editor",
+    "editor_tools_hint": "Configure o comportamento padrão do editor de capturas.",
+    "toolbar_position": "Posição Padrão da Barra de Ferramentas"
   },
   "app": {
     "loading": "Carregando...",
