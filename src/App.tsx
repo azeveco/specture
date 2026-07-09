@@ -12,7 +12,7 @@ import { loadSettings } from "./store";
 import i18n from "./i18n";
 import React, { ErrorInfo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Square, Circle, ArrowRight, Pen, Droplet, Type, Undo, Redo, Monitor, Scissors, AppWindow, Highlighter, GripVertical } from 'lucide-react';
+import { Square, Circle, ArrowRight, Pen, Droplet, Type, Undo, Redo, Monitor, Scissors, AppWindow, Highlighter, GripVertical, MousePointer2, Eraser } from 'lucide-react';
 import "./App.css";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
@@ -42,7 +42,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 // ----------------------------------------------------
 // Types
 // ----------------------------------------------------
-type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | "highlighter" | null;
+type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | "highlighter" | "select" | "eraser" | null;
 type Point = { x: number; y: number };
 
 const isMac = typeOs() === 'macos';
@@ -57,6 +57,7 @@ async function updateTargetColorSpace() {
 }
 
 interface Annotation {
+  id: string;
   tool: Tool;
   color: string;
   lineWidth: number;
@@ -228,13 +229,22 @@ function Editor() {
   const [currentPos, setCurrentPos] = useState<Point | null>(null);
   const [isResizing, setIsResizing] = useState<string | null>(null); // handle name: 'nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'
   
+  // Annotation editing state
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [isResizingAnnotation, setIsResizingAnnotation] = useState<string | null>(null);
+  const [isMovingAnnotation, setIsMovingAnnotation] = useState(false);
+  
   // Window Capture state
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [hoveredWindow, setHoveredWindow] = useState<WindowInfo | null>(null);
   const [monitorOffset, setMonitorOffset] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
   
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [redoStack, setRedoStack] = useState<Annotation[]>([]);
+  const [redoStack, setRedoStack] = useState<Annotation[][]>([]);
+  const [undoStack, setUndoStack] = useState<Annotation[][]>([]);
+  
+  const historySnapshot = useRef<Annotation[] | null>(null);
+  const hasEditedAnnotation = useRef(false);
   const [currentTool, setCurrentTool] = useState<Tool | null>(null);
   const [currentColor, setCurrentColor] = useState<string>("#ef4444"); 
   const [lineWidth, setLineWidth] = useState<number>(4);
@@ -252,14 +262,20 @@ function Editor() {
   const isCancellingText = useRef(false);
   const isHoveringHeader = useRef(false);
   const colorInputRef = useRef<HTMLInputElement>(null);
+  
+  const moveStartPos = useRef<{ x: number, y: number } | null>(null);
+  const resizeStartAnnotation = useRef<Annotation | null>(null);
 
   const resetEditorState = useCallback(() => {
     setAnnotations([]);
+    setUndoStack([]);
     setRedoStack([]);
     setCurrentTool(null);
     setActiveText(null);
     setIsDrawing(false);
     setCurrentAnnotation(null);
+    setSelectedAnnotationId(null);
+    historySnapshot.current = null;
   }, []);
 
   useEffect(() => {
@@ -288,6 +304,8 @@ function Editor() {
       if (captureMode === "region" || captureMode === "scrolling") setOverlayMode("SELECTING");
       else if (captureMode === "window") setOverlayMode("SELECTING_WINDOW");
       else setOverlayMode("EDITING");
+      
+      getCurrentWindow().setFocus();
       
       const settings = await loadSettings();
       setHighlighterMode(settings.highlighterMode || "normal");
@@ -750,6 +768,161 @@ function Editor() {
   }, [isResizing]);
 
   useEffect(() => {
+    if (currentTool !== "select") {
+      setSelectedAnnotationId(null);
+    }
+  }, [currentTool]);
+
+  useEffect(() => {
+    if (!isMovingAnnotation || !selectedAnnotationId) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      hasEditedAnnotation.current = true;
+      setAnnotations(prev => prev.map(ann => {
+        if (ann.id !== selectedAnnotationId) return ann;
+        if (!moveStartPos.current) return ann;
+        
+        const dx = e.clientX - moveStartPos.current.x;
+        const dy = e.clientY - moveStartPos.current.y;
+        
+        let newAnn = { ...ann };
+        if (newAnn.rect) {
+          newAnn.rect = { ...newAnn.rect, x: newAnn.rect.x + dx, y: newAnn.rect.y + dy };
+        }
+        if (newAnn.points) {
+          newAnn.points = newAnn.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        }
+        
+        moveStartPos.current = { x: e.clientX, y: e.clientY };
+        return newAnn;
+      }));
+    };
+
+    const onPointerUp = () => {
+      if (hasEditedAnnotation.current && historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        hasEditedAnnotation.current = false;
+        historySnapshot.current = null;
+      }
+      setIsMovingAnnotation(false);
+      moveStartPos.current = null;
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isMovingAnnotation, selectedAnnotationId]);
+
+  useEffect(() => {
+    if (!isResizingAnnotation || !selectedAnnotationId) return;
+    
+    const onPointerMove = (e: PointerEvent) => {
+      hasEditedAnnotation.current = true;
+      setAnnotations(prev => prev.map(ann => {
+        if (ann.id !== selectedAnnotationId) return ann;
+        if (!resizeStartAnnotation.current) return ann;
+        
+        let newAnn = { ...ann };
+        
+        if (ann.tool === "rect" || ann.tool === "circle") {
+          let { x, y, w, h } = resizeStartAnnotation.current.rect!;
+          
+          if (isResizingAnnotation.includes('w')) {
+            const diff = e.clientX - x;
+            x = e.clientX;
+            w = w - diff;
+          }
+          if (isResizingAnnotation.includes('e')) {
+            w = e.clientX - x;
+          }
+          if (isResizingAnnotation.includes('n')) {
+            const diff = e.clientY - y;
+            y = e.clientY;
+            h = h - diff;
+          }
+          if (isResizingAnnotation.includes('s')) {
+            h = e.clientY - y;
+          }
+          
+          if (e.shiftKey) {
+            const size = Math.max(Math.abs(w), Math.abs(h));
+            if (isResizingAnnotation.includes('w')) {
+              x = (x + w) - size;
+              w = size;
+            } else if (isResizingAnnotation.includes('e')) {
+              w = size;
+            }
+            if (isResizingAnnotation.includes('n')) {
+              y = (y + h) - size;
+              h = size;
+            } else if (isResizingAnnotation.includes('s')) {
+              h = size;
+            }
+          }
+          
+          // Allow negative width/height visually, but normalize by flipping coordinates.
+          // Wait, the drawing logic works best with w/h >= 0.
+          if (w < 0) { x += w; w = Math.abs(w); }
+          if (h < 0) { y += h; h = Math.abs(h); }
+          
+          newAnn.rect = { x, y, w, h };
+        } else if (ann.tool === "arrow") {
+          // 'start' or 'end' handle
+          let p1 = { ...resizeStartAnnotation.current.points[0] };
+          let p2 = { ...resizeStartAnnotation.current.points[1] };
+          
+          let targetPoint = isResizingAnnotation === 'start' ? p1 : p2;
+          let anchorPoint = isResizingAnnotation === 'start' ? p2 : p1;
+          
+          targetPoint.x = e.clientX;
+          targetPoint.y = e.clientY;
+
+          if (e.shiftKey) {
+            const dx = targetPoint.x - anchorPoint.x;
+            const dy = targetPoint.y - anchorPoint.y;
+            const angle = Math.atan2(dy, dx);
+            const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            const dist = Math.hypot(dx, dy);
+            targetPoint.x = anchorPoint.x + Math.cos(snappedAngle) * dist;
+            targetPoint.y = anchorPoint.y + Math.sin(snappedAngle) * dist;
+          }
+          
+          if (isResizingAnnotation === 'start') p1 = targetPoint;
+          else p2 = targetPoint;
+          
+          newAnn.points = [p1, p2];
+        }
+        
+        return newAnn;
+      }));
+    };
+    
+    const onPointerUp = () => {
+      if (hasEditedAnnotation.current && historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        hasEditedAnnotation.current = false;
+        historySnapshot.current = null;
+      }
+      setIsResizingAnnotation(null);
+      resizeStartAnnotation.current = null;
+    };
+    
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isResizingAnnotation, selectedAnnotationId]);
+
+  useEffect(() => {
     if (!isDraggingToolbar) return;
     
     const onPointerMove = (e: PointerEvent) => {
@@ -786,16 +959,103 @@ function Editor() {
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, []);
 
-  const getMousePos = (e: React.MouseEvent | MouseEvent) => {
+  const getMousePos = useCallback((e: MouseEvent | React.MouseEvent | PointerEvent) => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+    if (!canvas) return { x: e.clientX, y: e.clientY };
     const rect = canvas.getBoundingClientRect();
-    
     return {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top
     };
-  };
+  }, []);
+
+  const getClientPos = useCallback((x: number, y: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { clientX: x, clientY: y };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      clientX: x + rect.left,
+      clientY: y + rect.top
+    };
+  }, []);
+
+  const getAnnotationAtPos = useCallback((x: number, y: number): Annotation | null => {
+    // iterate backwards to find the top-most annotation
+    for (let i = annotations.length - 1; i >= 0; i--) {
+      const ann = annotations[i];
+      if (ann.tool === "rect" || ann.tool === "circle" || ann.tool === "blur") {
+        if (ann.rect) {
+          const rx = Math.min(ann.rect.x, ann.rect.x + ann.rect.w);
+          const ry = Math.min(ann.rect.y, ann.rect.y + ann.rect.h);
+          const rw = Math.abs(ann.rect.w);
+          const rh = Math.abs(ann.rect.h);
+          if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) {
+            return ann;
+          }
+        }
+      } else if (ann.tool === "text") {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (ctx && ann.text && ann.points[0]) {
+          ctx.font = `${ann.fontSize}px ${ann.fontFamily}`;
+          const lines = ann.text.split('\n');
+          let maxWidth = 0;
+          let totalHeight = lines.length * (ann.fontSize || 24) * 1.2;
+          for (const line of lines) {
+            const metrics = ctx.measureText(line);
+            if (metrics.width > maxWidth) maxWidth = metrics.width;
+          }
+          const tx = ann.points[0].x;
+          const ty = ann.points[0].y;
+          if (x >= tx && x <= tx + maxWidth && y >= ty && y <= ty + totalHeight) {
+            return ann;
+          }
+        }
+      } else if (ann.tool === "arrow") {
+        if (ann.points.length >= 2) {
+          const p1 = ann.points[0];
+          const p2 = ann.points[1];
+          const l2 = Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2);
+          let dist = 0;
+          if (l2 === 0) {
+            dist = Math.hypot(x - p1.x, y - p1.y);
+          } else {
+            let t = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            const projX = p1.x + t * (p2.x - p1.x);
+            const projY = p1.y + t * (p2.y - p1.y);
+            dist = Math.hypot(x - projX, y - projY);
+          }
+          if (dist <= (ann.lineWidth || 4) + 5) {
+            return ann;
+          }
+        }
+      } else if (ann.tool === "freehand" || ann.tool === "highlighter") {
+        const radius = (ann.lineWidth || 4) + 10;
+        for (let j = 0; j < ann.points.length; j++) {
+          const pt = ann.points[j];
+          if (Math.hypot(x - pt.x, y - pt.y) <= radius) {
+            return ann;
+          }
+          if (j < ann.points.length - 1) {
+            const p1 = pt;
+            const p2 = ann.points[j + 1];
+            const l2 = Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2);
+            if (l2 > 0) {
+              let t = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / l2;
+              t = Math.max(0, Math.min(1, t));
+              const projX = p1.x + t * (p2.x - p1.x);
+              const projY = p1.y + t * (p2.y - p1.y);
+              if (Math.hypot(x - projX, y - projY) <= radius) {
+                return ann;
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }, [annotations]);
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (!baseImage) return;
@@ -844,14 +1104,52 @@ function Editor() {
     if (overlayMode !== "EDITING") return;
     
     if (!currentTool) return;
+
+    const pos = getMousePos(e);
+
+    if (currentTool === "eraser") {
+      historySnapshot.current = annotations;
+      const ann = getAnnotationAtPos(pos.x, pos.y);
+      if (ann) {
+        setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+        setRedoStack([]);
+      }
+      setIsDrawing(true);
+      return;
+    }
+
+    if (currentTool === "select") {
+      const ann = getAnnotationAtPos(pos.x, pos.y);
+      if (ann) {
+        setSelectedAnnotationId(ann.id);
+        if (e.detail === 2 && ann.tool === "text") {
+          historySnapshot.current = annotations;
+          const { clientX, clientY } = getClientPos(ann.points[0].x, ann.points[0].y);
+          setActiveText({ x: ann.points[0].x, y: ann.points[0].y, clientX, clientY, text: ann.text || "" });
+          setCurrentColor(ann.color);
+          setFontFamily(ann.fontFamily || "Inter");
+          setFontSize(ann.fontSize || 24);
+          setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+          setSelectedAnnotationId(null);
+        }
+      } else {
+        setSelectedAnnotationId(null);
+      }
+      return;
+    }
     
     if (currentTool === "text") {
       if (activeText) {
+        if (historySnapshot.current) {
+          const snap = historySnapshot.current;
+          setUndoStack(prev => [...prev, snap]);
+          setRedoStack([]);
+          historySnapshot.current = null;
+        }
         if (activeText.text.trim()) {
           setAnnotations(prev => [...prev, {
-            tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+            id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
           }]);
-          setRedoStack([]);
         }
         setActiveText(null);
         setCurrentTool(null);
@@ -861,27 +1159,31 @@ function Editor() {
       
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const pos = getMousePos(e);
       
       setActiveText({ x: pos.x, y: pos.y, clientX: e.clientX, clientY: e.clientY, text: "" });
       return;
     }
 
     if (activeText) {
+      if (historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        historySnapshot.current = null;
+      }
       if (activeText.text.trim()) {
         setAnnotations(prev => [...prev, {
-          tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+          id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
         }]);
-        setRedoStack([]);
       }
       setActiveText(null);
       setCurrentTool(null);
       return;
     }
     
-    const pos = getMousePos(e);
+    historySnapshot.current = annotations;
     setIsDrawing(true);
-    setCurrentAnnotation({ tool: currentTool!, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }, highlighterMode });
+    setCurrentAnnotation({ id: crypto.randomUUID(), tool: currentTool!, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }, highlighterMode });
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -904,7 +1206,16 @@ function Editor() {
       return;
     }
 
-    if (!isDrawing || !currentAnnotation) return;
+    if (!isDrawing || !currentAnnotation) {
+      if (isDrawing && currentTool === "eraser") {
+        const pos = getMousePos(e);
+        const ann = getAnnotationAtPos(pos.x, pos.y);
+        if (ann) {
+          setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+        }
+      }
+      return;
+    }
     const pos = getMousePos(e);
 
     setCurrentAnnotation(prev => {
@@ -1012,9 +1323,24 @@ function Editor() {
     }
 
     if (isDrawing && currentAnnotation) {
+      if (historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        historySnapshot.current = null;
+      }
       setAnnotations(prev => [...prev, currentAnnotation]);
-      setRedoStack([]);
     }
+    
+    if (currentTool === "eraser" && historySnapshot.current) {
+      if (historySnapshot.current !== annotations) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+      }
+      historySnapshot.current = null;
+    }
+    
     setIsDrawing(false);
     setCurrentAnnotation(null);
   };
@@ -1167,18 +1493,38 @@ function Editor() {
   }, [handleSave, cropRegion]);
 
   const handleUndo = useCallback(() => {
-    if (annotations.length === 0) return;
-    const last = annotations[annotations.length - 1];
-    setAnnotations(annotations.slice(0, -1));
-    setRedoStack([...redoStack, last]);
-  }, [annotations, redoStack]);
+    if (isDrawing) {
+      setIsDrawing(false);
+      setCurrentAnnotation(null);
+      return;
+    }
+    setUndoStack(currentUndo => {
+      if (currentUndo.length === 0) return currentUndo;
+      const previous = currentUndo[currentUndo.length - 1];
+      
+      setAnnotations(currentAnns => {
+        setRedoStack(currentRedo => [...currentRedo, currentAnns || []]);
+        return previous || [];
+      });
+      
+      return currentUndo.slice(0, -1);
+    });
+  }, [isDrawing]);
 
   const handleRedo = useCallback(() => {
-    if (redoStack.length === 0) return;
-    const next = redoStack[redoStack.length - 1];
-    setRedoStack(redoStack.slice(0, -1));
-    setAnnotations([...annotations, next]);
-  }, [annotations, redoStack]);
+    if (isDrawing) return;
+    setRedoStack(currentRedo => {
+      if (currentRedo.length === 0) return currentRedo;
+      const next = currentRedo[currentRedo.length - 1];
+      
+      setAnnotations(currentAnns => {
+        setUndoStack(currentUndo => [...currentUndo, currentAnns || []]);
+        return next || [];
+      });
+      
+      return currentRedo.slice(0, -1);
+    });
+  }, [isDrawing]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1240,19 +1586,23 @@ function Editor() {
           return null;
         });
       } else if (e.key === '1') {
-        setCurrentTool("rect");
+        setCurrentTool("select");
       } else if (e.key === '2') {
-        setCurrentTool("circle");
+        setCurrentTool("rect");
       } else if (e.key === '3') {
-        setCurrentTool("arrow");
+        setCurrentTool("circle");
       } else if (e.key === '4') {
-        setCurrentTool("freehand");
+        setCurrentTool("arrow");
       } else if (e.key === '5') {
-        setCurrentTool("blur");
+        setCurrentTool("freehand");
       } else if (e.key === '6') {
-        setCurrentTool("text");
+        setCurrentTool("blur");
       } else if (e.key === '7') {
+        setCurrentTool("text");
+      } else if (e.key === '8') {
         setCurrentTool("highlighter");
+      } else if (e.key === '9') {
+        setCurrentTool("eraser");
       } else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
         if (e.shiftKey) {
           handleRedo();
@@ -1312,13 +1662,15 @@ function Editor() {
                 <GripVertical size={16} />
               </div>
               {[
+                { id: "select", icon: <MousePointer2 size={16} /> },
                 { id: "rect", icon: <Square size={16} /> },
                 { id: "circle", icon: <Circle size={16} /> },
                 { id: "arrow", icon: <ArrowRight size={16} /> },
                 { id: "freehand", icon: <Pen size={16} /> },
                 { id: "blur", icon: <Droplet size={16} /> },
                 { id: "text", icon: <Type size={16} /> },
-                { id: "highlighter", icon: <Highlighter size={16} /> }
+                { id: "highlighter", icon: <Highlighter size={16} /> },
+                { id: "eraser", icon: <Eraser size={16} /> }
               ].map((toolObj, idx) => (
                 <button 
                   key={toolObj.id}
@@ -1326,7 +1678,7 @@ function Editor() {
                     if (activeText && toolObj.id !== "text") {
                       if (activeText.text.trim()) {
                         setAnnotations(prev => [...prev, {
-                          tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+                          id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
                         }]);
                         setRedoStack([]);
                       }
@@ -1428,8 +1780,10 @@ function Editor() {
               </div>
             </div>
             
+            <div className="w-px h-6 bg-zinc-700/50 mx-4" />
+            
             <div className="flex gap-1.5 items-center">
-              <button onClick={handleUndo} disabled={annotations.length === 0} className="p-1.5 text-xs font-medium rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-300 transition-colors relative group flex items-center justify-center">
+              <button onClick={handleUndo} disabled={undoStack.length === 0 && !isDrawing} className="p-1.5 text-xs font-medium rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-300 transition-colors relative group flex items-center justify-center">
                 <Undo size={14} />
                 <div className="absolute top-full mt-1.5 bg-zinc-800 text-zinc-200 text-[10px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg border border-zinc-700 z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
                   Undo (Cmd+Z)
@@ -1494,12 +1848,122 @@ function Editor() {
                   <div className="absolute w-3 bg-white border border-blue-500 cursor-ew-resize z-30" style={{ left: cropRegion.x + cropRegion.w - 6, top: cropRegion.y + cropRegion.h / 2 - 6, height: 12 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('e'); }} onMouseDown={e => e.preventDefault()} />
                 </>
               )}
+
+              {selectedAnnotationId && (() => {
+                const ann = annotations.find(a => a.id === selectedAnnotationId);
+                if (!ann) return null;
+                
+                let rx = 0, ry = 0, rw = 0, rh = 0;
+                if (ann.tool === "rect" || ann.tool === "circle") {
+                  if (!ann.rect) return null;
+                  rx = Math.min(ann.rect.x, ann.rect.x + ann.rect.w);
+                  ry = Math.min(ann.rect.y, ann.rect.y + ann.rect.h);
+                  rw = Math.abs(ann.rect.w);
+                  rh = Math.abs(ann.rect.h);
+                } else if (ann.tool === "text") {
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  if (ctx && ann.text && ann.points[0]) {
+                    ctx.font = `${ann.fontSize}px ${ann.fontFamily}`;
+                    const lines = ann.text.split('\n');
+                    let maxWidth = 0;
+                    let totalHeight = lines.length * (ann.fontSize || 24) * 1.2;
+                    for (const line of lines) {
+                      const metrics = ctx.measureText(line);
+                      if (metrics.width > maxWidth) maxWidth = metrics.width;
+                    }
+                    rx = ann.points[0].x;
+                    ry = ann.points[0].y;
+                    rw = maxWidth;
+                    rh = totalHeight;
+                  }
+                } else if (ann.tool === "arrow") {
+                  rx = Math.min(ann.points[0].x, ann.points[1].x);
+                  ry = Math.min(ann.points[0].y, ann.points[1].y);
+                  rw = Math.abs(ann.points[1].x - ann.points[0].x);
+                  rh = Math.abs(ann.points[1].y - ann.points[0].y);
+                }
+
+                if (ann.tool === "arrow") {
+                  return (
+                    <div className="absolute z-20 select-none" style={{ left: rx, top: ry, width: rw, height: rh }}>
+                      <div className="absolute border border-blue-500/50 bg-blue-500/10 cursor-move" style={{ width: '100%', height: '100%' }} onPointerDown={(e) => {
+                        e.stopPropagation();
+                        historySnapshot.current = annotations;
+                        setIsMovingAnnotation(true);
+                        moveStartPos.current = { x: e.clientX, y: e.clientY };
+                      }} />
+                      <div className="absolute w-3 h-3 bg-white border border-blue-500 rounded-full cursor-crosshair z-30" style={{ left: ann.points[0].x - rx - 6, top: ann.points[0].y - ry - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('start'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                      <div className="absolute w-3 h-3 bg-white border border-blue-500 rounded-full cursor-crosshair z-30" style={{ left: ann.points[1].x - rx - 6, top: ann.points[1].y - ry - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('end'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div 
+                    className={`absolute border border-blue-500 bg-blue-500/10 z-20 select-none ${ann.tool === 'text' ? 'cursor-text' : 'cursor-move'}`}
+                    style={{ left: rx, top: ry, width: rw, height: rh }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      historySnapshot.current = annotations;
+                      setIsMovingAnnotation(true);
+                      moveStartPos.current = { x: e.clientX, y: e.clientY };
+                    }}
+                    onDoubleClick={(e) => {
+                      if (ann.tool === "text") {
+                        e.stopPropagation();
+                        historySnapshot.current = annotations;
+                        const { clientX, clientY } = getClientPos(ann.points[0].x, ann.points[0].y);
+                        setActiveText({ x: ann.points[0].x, y: ann.points[0].y, clientX, clientY, text: ann.text || "" });
+                        setCurrentColor(ann.color);
+                        setFontFamily(ann.fontFamily || "Inter");
+                        setFontSize(ann.fontSize || 24);
+                        setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+                        setSelectedAnnotationId(null);
+                      }
+                    }}
+                  >
+                    {(ann.tool === "rect" || ann.tool === "circle") && (
+                      <>
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nwse-resize z-30" style={{ left: -6, top: -6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('nw'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nesw-resize z-30" style={{ left: rw - 6, top: -6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('ne'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nesw-resize z-30" style={{ left: -6, top: rh - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('sw'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nwse-resize z-30" style={{ left: rw - 6, top: rh - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('se'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        
+                        <div className="absolute h-3 bg-white border border-blue-500 cursor-ns-resize z-30" style={{ left: rw / 2 - 6, top: -6, width: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('n'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute h-3 bg-white border border-blue-500 cursor-ns-resize z-30" style={{ left: rw / 2 - 6, top: rh - 6, width: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('s'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 bg-white border border-blue-500 cursor-ew-resize z-30" style={{ left: -6, top: rh / 2 - 6, height: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('w'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 bg-white border border-blue-500 cursor-ew-resize z-30" style={{ left: rw - 6, top: rh / 2 - 6, height: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('e'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
           
               {activeText && (
                 <textarea
                   autoFocus
+                  ref={(el) => {
+                    if (el) {
+                      el.style.height = 'auto';
+                      el.style.height = el.scrollHeight + 'px';
+                      el.style.width = 'auto';
+                      el.style.width = el.scrollWidth + 'px';
+                    }
+                  }}
+                  onFocus={(e) => {
+                    const val = e.target.value;
+                    e.target.value = '';
+                    e.target.value = val;
+                  }}
                   value={activeText.text}
-                  onChange={(e) => setActiveText({ ...activeText, text: e.target.value })}
+                  onChange={(e) => {
+                    setActiveText({ ...activeText, text: e.target.value });
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${e.target.scrollHeight}px`;
+                    e.target.style.width = 'auto';
+                    e.target.style.width = `${e.target.scrollWidth + 20}px`;
+                  }}
                   onBlur={(e) => {
                     if (isCancellingText.current) {
                       isCancellingText.current = false;
@@ -1516,11 +1980,19 @@ function Editor() {
                       }, 0);
                       return;
                     }
-                    if (activeText.text.trim()) {
-                      setAnnotations(prev => [...prev, {
-                        tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
-                      }]);
-                      setRedoStack([]);
+                    if (activeText.text.trim() || historySnapshot.current) {
+                      if (hasEditedAnnotation.current && historySnapshot.current) {
+                        const snap = historySnapshot.current;
+                        setUndoStack(prev => [...prev, snap]);
+                        setRedoStack([]);
+                        hasEditedAnnotation.current = false;
+                        historySnapshot.current = null;
+                      }
+                      if (activeText.text.trim()) {
+                        setAnnotations(prev => [...prev, {
+                          id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+                        }]);
+                      }
                     }
                     setActiveText(null);
                     setCurrentTool(null);
