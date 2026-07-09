@@ -250,6 +250,7 @@ export default function Settings() {
                         <CheatSheetRow label={t('settings.cheat_tools', 'Select Tools (1-9)')} shortcut={<><Kbd>1</Kbd><span className="text-zinc-600 text-xs">..</span><Kbd>9</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_size', 'Change Tool Size (or Font Size if not typing)')} shortcut={<><Kbd>[</Kbd><span className="text-zinc-600 text-xs">/</span><Kbd>]</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_fontsize', 'Change Font Size (while typing)')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>[</Kbd><span className="text-zinc-600 text-xs">/</span><Kbd>]</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_proportional', 'Proportional shapes / Straight lines')} shortcut={<Kbd>{shift}</Kbd>} />
                         <CheatSheetRow label={t('settings.cheat_color', 'Open Color Picker')} shortcut={<Kbd>Right Click</Kbd>} />
                         <CheatSheetRow label={t('settings.cheat_eyedropper', 'Eyedropper Tool')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Click</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_undo', 'Undo Action')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Z</Kbd></>} />

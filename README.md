@@ -9,7 +9,7 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 
 ### ✨ Key Features
 - **Multiple Capture Modes**: Full Screen, Region, Window, and long Scrolling Capture.
-- **Built-in Editor**: Annotate your screenshots instantly with arrows, rectangles, circles, freehand drawing, blur (obfuscation), text, and a realistic highlighter. No separate windows—editing happens completely in-place via a floating toolbar.
+- **Built-in Editor**: Annotate your screenshots instantly with arrows, rectangles, circles, freehand drawing, blur (obfuscation), text, and a realistic highlighter. No separate windows—editing happens completely in-place via a floating toolbar. You can even select and edit the properties (color, thickness, font) of existing annotations!
 - **Scrolling Capture**: Seamlessly capture long websites or documents with automated scrolling and stitching.
 - **System Tray Integration**: Quietly runs in the background. Access your settings and capture modes with a single click.
 - **Multi-language Support**: Available in English, Brazilian Portuguese (`pt-BR`), and Spanish (`es`).
@@ -82,7 +82,7 @@ When you are in the annotation window, you can use these shortcuts to speed up y
 | Action | Shortcut |
 | --- | --- |
 | **Select Tools** | `1` (Select), `2` (Rect), `3` (Circle), `4` (Arrow), `5` (Freehand), `6` (Blur), `7` (Text), `8` (Highlighter), `9` (Eraser) |
-| **Straight Lines / Proportions** | Hold `Shift` while using tools (Arrow snapping, perfect square/circle) |
+| **Straight Lines / Proportions** | Hold `Shift` while creating or editing shapes (Arrow snapping, perfect square/circle) |
 | **Change Brush Thickness (or Font Size if not typing)** | `[` to decrease, `]` to increase |
 | **Change Text Font Size (while typing)** | `Command + [` and `Command + ]` |
 | **Color Menu** | `Right Click anywhere on the screenshot` |

@@ -231,6 +231,8 @@ function Editor() {
   
   // Annotation editing state
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const selectedAnnotationIdRef = useRef<string | null>(null);
+  const selectedAnnotationIsTextRef = useRef<boolean>(false);
   const [isResizingAnnotation, setIsResizingAnnotation] = useState<string | null>(null);
   const [isMovingAnnotation, setIsMovingAnnotation] = useState(false);
   
@@ -242,6 +244,11 @@ function Editor() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [redoStack, setRedoStack] = useState<Annotation[][]>([]);
   const [undoStack, setUndoStack] = useState<Annotation[][]>([]);
+  
+  useEffect(() => { 
+    selectedAnnotationIdRef.current = selectedAnnotationId; 
+    selectedAnnotationIsTextRef.current = annotations.find(a => a.id === selectedAnnotationId)?.tool === "text" || false;
+  }, [selectedAnnotationId, annotations]);
   
   const historySnapshot = useRef<Annotation[] | null>(null);
   const hasEditedAnnotation = useRef(false);
@@ -265,6 +272,62 @@ function Editor() {
   
   const moveStartPos = useRef<{ x: number, y: number } | null>(null);
   const resizeStartAnnotation = useRef<Annotation | null>(null);
+
+  const updateColor = useCallback((newColor: string) => {
+    setCurrentColor(newColor);
+    setAnnotations(prevAnns => {
+      const id = selectedAnnotationIdRef.current;
+      if (!id) return prevAnns;
+      if (!historySnapshot.current) historySnapshot.current = prevAnns;
+      hasEditedAnnotation.current = true;
+      return prevAnns.map(a => a.id === id ? { ...a, color: newColor } : a);
+    });
+  }, []);
+
+  const updateLineWidth = useCallback((updater: number | ((prev: number) => number)) => {
+    setLineWidth(prev => {
+      const newWidth = typeof updater === 'function' ? updater(prev) : updater;
+      setAnnotations(prevAnns => {
+        const id = selectedAnnotationIdRef.current;
+        if (!id) return prevAnns;
+        const ann = prevAnns.find(a => a.id === id);
+        if (!ann || ann.tool === "text") return prevAnns;
+        if (!historySnapshot.current) historySnapshot.current = prevAnns;
+        hasEditedAnnotation.current = true;
+        return prevAnns.map(a => a.id === id ? { ...a, lineWidth: newWidth } : a);
+      });
+      return newWidth;
+    });
+  }, []);
+
+  const updateFontSize = useCallback((updater: number | ((prev: number) => number)) => {
+    setFontSize(prev => {
+      const newSize = typeof updater === 'function' ? updater(prev) : updater;
+      setAnnotations(prevAnns => {
+        const id = selectedAnnotationIdRef.current;
+        if (!id) return prevAnns;
+        const ann = prevAnns.find(a => a.id === id);
+        if (!ann || ann.tool !== "text") return prevAnns;
+        if (!historySnapshot.current) historySnapshot.current = prevAnns;
+        hasEditedAnnotation.current = true;
+        return prevAnns.map(a => a.id === id ? { ...a, fontSize: newSize } : a);
+      });
+      return newSize;
+    });
+  }, []);
+
+  const updateFontFamily = useCallback((newFont: string) => {
+    setFontFamily(newFont);
+    setAnnotations(prevAnns => {
+      const id = selectedAnnotationIdRef.current;
+      if (!id) return prevAnns;
+      const ann = prevAnns.find(a => a.id === id);
+      if (!ann || ann.tool !== "text") return prevAnns;
+      if (!historySnapshot.current) historySnapshot.current = prevAnns;
+      hasEditedAnnotation.current = true;
+      return prevAnns.map(a => a.id === id ? { ...a, fontFamily: newFont } : a);
+    });
+  }, []);
 
   const resetEditorState = useCallback(() => {
     setAnnotations([]);
@@ -1058,6 +1121,7 @@ function Editor() {
   }, [annotations]);
 
   const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) return; // Ignore right-clicks for drawing/selecting
     if (!baseImage) return;
     
     // Eyedropper
@@ -1074,7 +1138,7 @@ function Editor() {
         if (ctx) {
           const pixel = ctx.getImageData(pos.x * scaleX, pos.y * scaleY, 1, 1).data;
           const hex = "#" + [pixel[0], pixel[1], pixel[2]].map(x => x.toString(16).padStart(2, '0')).join('');
-          setCurrentColor(hex);
+          updateColor(hex);
         }
       }
       setIsEyedropperActive(false);
@@ -1542,8 +1606,9 @@ function Editor() {
           e.preventDefault();
           const delta = isBracketLeft ? -1 : 1;
           
-          if (currentTool === "text") {
-            setFontSize(prev => {
+          const isTextAction = currentTool === "text" || activeText !== null || (currentTool === "select" && selectedAnnotationIsTextRef.current);
+          if (isTextAction) {
+            updateFontSize(prev => {
               // Map to standard font sizes if possible, or just step by 2
               const steps = [8, 10, 12, 14, 16, 20, 24, 32, 48, 54, 72, 100];
               const currentIndex = steps.findIndex(s => s >= prev);
@@ -1559,7 +1624,7 @@ function Editor() {
               }
             });
           } else {
-            setLineWidth(prev => Math.max(2, Math.min(30, prev + delta)));
+            updateLineWidth(prev => Math.max(2, Math.min(30, prev + delta)));
           }
           return;
         }
@@ -1586,6 +1651,24 @@ function Editor() {
           getCurrentWindow().hide();
           return null;
         });
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (selectedAnnotationIdRef.current) {
+          e.preventDefault();
+          setAnnotations(prevAnns => {
+            const id = selectedAnnotationIdRef.current;
+            if (!historySnapshot.current) historySnapshot.current = prevAnns;
+            
+            const snap = historySnapshot.current;
+            setUndoStack(prev => [...prev, snap]);
+            setRedoStack([]);
+            
+            historySnapshot.current = null;
+            hasEditedAnnotation.current = false;
+            
+            return prevAnns.filter(a => a.id !== id);
+          });
+          setSelectedAnnotationId(null);
+        }
       } else if (e.key === '1') {
         setCurrentTool("select");
       } else if (e.key === '2') {
@@ -1703,11 +1786,11 @@ function Editor() {
             </div>
             
             <div className="flex items-center gap-3">
-              {currentTool === "text" ? (
+              {(currentTool === "text" || activeText !== null || (currentTool === "select" && selectedAnnotationId && annotations.find(a => a.id === selectedAnnotationId)?.tool === "text")) ? (
                 <div className="flex items-center ml-4 border-l border-zinc-700/50 pl-4 space-x-3">
                   <select
                     value={fontFamily}
-                    onChange={(e) => setFontFamily(e.target.value)}
+                    onChange={(e) => updateFontFamily(e.target.value)}
                     className="bg-zinc-800 text-zinc-200 border border-zinc-700 rounded-md px-2 py-1 text-xs outline-none focus:border-blue-500/50 transition-colors"
                   >
                     <option value="Inter">Inter</option>
@@ -1723,7 +1806,7 @@ function Editor() {
                       type="range" 
                       min="8" max="100" 
                       value={fontSize}
-                      onChange={e => setFontSize(Number(e.target.value))}
+                      onChange={e => updateFontSize(Number(e.target.value))}
                       className="w-20 accent-blue-500"
                     />
                     <span className="text-zinc-400 text-[11px] w-6 text-center">{fontSize}</span>
@@ -1753,7 +1836,7 @@ function Editor() {
                     type="range" 
                     min="2" max="30" 
                     value={lineWidth}
-                    onChange={e => setLineWidth(Number(e.target.value))}
+                    onChange={e => updateLineWidth(Number(e.target.value))}
                     className="w-20 accent-blue-500"
                   />
                   <span className="text-zinc-400 text-[11px] w-4 text-center">{lineWidth}</span>
@@ -1775,7 +1858,7 @@ function Editor() {
                   ref={colorInputRef}
                   type="color" 
                   value={currentColor}
-                  onChange={e => setCurrentColor(e.target.value)}
+                  onChange={e => updateColor(e.target.value)}
                   className="w-6 h-6 rounded-full cursor-pointer bg-transparent border-0 outline-none hover:scale-110 transition-transform"
                 />
               </div>
@@ -2007,7 +2090,7 @@ function Editor() {
                   }}
                   onWheel={(e) => {
                     if (e.metaKey || e.ctrlKey) {
-                      setFontSize(prev => Math.max(8, Math.min(100, prev - Math.sign(e.deltaY))));
+                      updateFontSize(prev => Math.max(8, Math.min(100, prev - Math.sign(e.deltaY))));
                     }
                   }}
                   style={{
