@@ -492,7 +492,12 @@ fn update_tray_menu(
     capture_window: String, 
     scrolling_capture: String, 
     settings_text: String, 
-    quit_text: String
+    quit_text: String,
+    shortcut_capture_menu: Option<String>,
+    shortcut_fullscreen: Option<String>,
+    shortcut_region: Option<String>,
+    shortcut_window: Option<String>,
+    shortcut_scrolling: Option<String>
 ) -> Result<(), String> {
     {
         let mut s = state.0.lock().unwrap();
@@ -507,13 +512,28 @@ fn update_tray_menu(
     
     if let Some(tray) = app.tray_by_id("main_tray") {
         use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+        let mut b_capture_menu = MenuItemBuilder::with_id("capture_menu", open_capture_menu);
+        if let Some(ref sc) = shortcut_capture_menu { if !sc.is_empty() { b_capture_menu = b_capture_menu.accelerator(sc); } }
+        
+        let mut b_fullscreen = MenuItemBuilder::with_id("fullscreen", capture_fullscreen);
+        if let Some(ref sc) = shortcut_fullscreen { if !sc.is_empty() { b_fullscreen = b_fullscreen.accelerator(sc); } }
+        
+        let mut b_region = MenuItemBuilder::with_id("region", capture_region);
+        if let Some(ref sc) = shortcut_region { if !sc.is_empty() { b_region = b_region.accelerator(sc); } }
+        
+        let mut b_window = MenuItemBuilder::with_id("window", capture_window);
+        if let Some(ref sc) = shortcut_window { if !sc.is_empty() { b_window = b_window.accelerator(sc); } }
+        
+        let mut b_scrolling = MenuItemBuilder::with_id("scrolling", scrolling_capture);
+        if let Some(ref sc) = shortcut_scrolling { if !sc.is_empty() { b_scrolling = b_scrolling.accelerator(sc); } }
+
         let menu = MenuBuilder::new(&app)
             .items(&[
-                &MenuItemBuilder::with_id("capture_menu", open_capture_menu).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("fullscreen", capture_fullscreen).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("region", capture_region).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("window", capture_window).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("scrolling", scrolling_capture).build(&app).unwrap(),
+                &b_capture_menu.build(&app).unwrap(),
+                &b_fullscreen.build(&app).unwrap(),
+                &b_region.build(&app).unwrap(),
+                &b_window.build(&app).unwrap(),
+                &b_scrolling.build(&app).unwrap(),
                 &PredefinedMenuItem::separator(&app).unwrap(),
                 &MenuItemBuilder::with_id("settings", settings_text).build(&app).unwrap(),
                 &MenuItemBuilder::with_id("quit", quit_text).build(&app).unwrap(),

@@ -2177,6 +2177,11 @@ function MainApp() {
               scrollingCapture: i18n.t('settings.scrolling_capture') || 'Scrolling Capture',
               settingsText: i18n.t('settings.title') || 'Settings...',
               quitText: i18n.t('app.quit') || 'Quit',
+              shortcutCaptureMenu: settings.shortcutCaptureMenu || null,
+              shortcutFullscreen: settings.shortcutFullScreen || null,
+              shortcutRegion: settings.shortcutRegion || null,
+              shortcutWindow: settings.shortcutWindow || null,
+              shortcutScrolling: settings.shortcutScrolling || null,
             }).catch(console.warn);
           });
           
