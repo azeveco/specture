@@ -1161,6 +1161,7 @@ function Editor() {
       if (!canvas) return;
       
       setActiveText({ x: pos.x, y: pos.y, clientX: e.clientX, clientY: e.clientY, text: "" });
+      historySnapshot.current = annotations;
       return;
     }
 
@@ -1981,11 +1982,10 @@ function Editor() {
                       return;
                     }
                     if (activeText.text.trim() || historySnapshot.current) {
-                      if (hasEditedAnnotation.current && historySnapshot.current) {
+                      if (historySnapshot.current) {
                         const snap = historySnapshot.current;
                         setUndoStack(prev => [...prev, snap]);
                         setRedoStack([]);
-                        hasEditedAnnotation.current = false;
                         historySnapshot.current = null;
                       }
                       if (activeText.text.trim()) {
