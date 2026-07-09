@@ -1,6 +1,6 @@
 [package]
 name = "Specture"
-version = "0.2.0"
+version = "0.3.0"
 description = "Capture screenshots and annotate on them"
 authors = ["azeveco"]
 edition = "2021"
