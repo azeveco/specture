@@ -225,16 +225,6 @@ export default function Settings() {
                     />
                   </SettingRow>
 
-                  <SettingRow label={t('settings.highlighter_mode', 'Highlighter Default Mode')}>
-                    <select 
-                      value={settings.highlighterMode || "normal"}
-                      onChange={(e) => updateSetting('highlighterMode', e.target.value as "normal" | "multiply")}
-                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
-                    >
-                      <option value="normal">{t('settings.highlighter_normal', 'Normal Transparency')}</option>
-                      <option value="multiply">{t('settings.highlighter_multiply', 'Multiply Blend')}</option>
-                    </select>
-                  </SettingRow>
                 </Panel>
               </div>
             )}
@@ -243,7 +233,7 @@ export default function Settings() {
             {activeTab === 'shortcuts' && (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <Panel title={t('settings.global_shortcuts')} description={t('settings.shortcut_modifiers_hint')}>
-                  <ShortcutInput label={t('settings.open_control_panel')} value={settings.shortcutControlPanel} onChange={(val) => updateSetting('shortcutControlPanel', val)} />
+                  <ShortcutInput label={t('settings.open_capture_menu')} value={settings.shortcutCaptureMenu} onChange={(val) => updateSetting('shortcutCaptureMenu', val)} />
                   <ShortcutInput label={t('settings.capture_full_screen')} value={settings.shortcutFullScreen} onChange={(val) => updateSetting('shortcutFullScreen', val)} />
                   <ShortcutInput label={t('settings.capture_region')} value={settings.shortcutRegion} onChange={(val) => updateSetting('shortcutRegion', val)} />
                   <ShortcutInput label={t('settings.capture_window')} value={settings.shortcutWindow} onChange={(val) => updateSetting('shortcutWindow', val)} />
@@ -257,13 +247,17 @@ export default function Settings() {
                     const shift = isMac ? '⇧' : 'Shift';
                     return (
                       <>
-                        <CheatSheetRow label={t('settings.cheat_tools', 'Select Tools (1-7)')} shortcut={<><Kbd>1</Kbd><span className="text-zinc-600 text-xs">..</span><Kbd>7</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_tools', 'Select Tools (1-9)')} shortcut={<><Kbd>1</Kbd><span className="text-zinc-600 text-xs">..</span><Kbd>9</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_size', 'Change Tool Size (or Font Size if not typing)')} shortcut={<><Kbd>[</Kbd><span className="text-zinc-600 text-xs">/</span><Kbd>]</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_fontsize', 'Change Font Size (while typing)')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>[</Kbd><span className="text-zinc-600 text-xs">/</span><Kbd>]</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_proportional', 'Proportional shapes / Straight lines')} shortcut={<Kbd>{shift}</Kbd>} />
                         <CheatSheetRow label={t('settings.cheat_color', 'Open Color Picker')} shortcut={<Kbd>Right Click</Kbd>} />
                         <CheatSheetRow label={t('settings.cheat_eyedropper', 'Eyedropper Tool')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Click</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_undo', 'Undo Action')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Z</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_redo', 'Redo Action')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>{shift}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Z</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_save', 'Save Image')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>S</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_copy', 'Copy to Clipboard')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>C</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_delete', 'Delete Selected Annotation')} shortcut={<><Kbd>Backspace</Kbd><span className="text-zinc-600 text-xs"> / </span><Kbd>Del</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_cancel', 'Cancel / Deselect')} shortcut={<Kbd>Esc</Kbd>} />
                       </>
                     );
@@ -275,6 +269,30 @@ export default function Settings() {
             {/* CAPTURE TAB */}
             {activeTab === 'capture' && (
               <div className="space-y-6 animate-in fade-in duration-200">
+                <Panel title={t('settings.editor_tools', 'Editor Tools')} description={t('settings.editor_tools_hint', 'Configure the default behavior for the capture editor.')}>
+                  <SettingRow label={t('settings.highlighter_mode', 'Highlighter Default Mode')}>
+                    <select 
+                      value={settings.highlighterMode || "normal"}
+                      onChange={(e) => updateSetting('highlighterMode', e.target.value as "normal" | "multiply")}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="normal">{t('settings.highlighter_normal', 'Normal Transparency')}</option>
+                      <option value="multiply">{t('settings.highlighter_multiply', 'Multiply Blend')}</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.toolbar_position', 'Default Toolbar Position')}>
+                    <select 
+                      value={settings.toolbarPosition || "bottom"}
+                      onChange={(e) => updateSetting('toolbarPosition', e.target.value as "bottom" | "top")}
+                      className="w-48 h-8 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+                    >
+                      <option value="bottom">{t('settings.position_bottom', 'Bottom')}</option>
+                      <option value="top">{t('settings.position_top', 'Top')}</option>
+                    </select>
+                  </SettingRow>
+                </Panel>
+                
                 <Panel title={t('settings.scrolling_capture')} description={t('settings.max_duration_hint')}>
                   <SettingRow label={t('settings.stop_button_position')}>
                     <select 

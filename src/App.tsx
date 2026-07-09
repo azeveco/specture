@@ -12,7 +12,7 @@ import { loadSettings } from "./store";
 import i18n from "./i18n";
 import React, { ErrorInfo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Square, Circle, ArrowRight, Pen, Droplet, Type, Undo, Redo, Monitor, Scissors, AppWindow, Highlighter } from 'lucide-react';
+import { Square, Circle, ArrowRight, Pen, Droplet, Type, Undo, Redo, Monitor, Scissors, AppWindow, Highlighter, GripVertical, MousePointer2, Eraser } from 'lucide-react';
 import "./App.css";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
@@ -42,7 +42,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 // ----------------------------------------------------
 // Types
 // ----------------------------------------------------
-type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | "highlighter" | null;
+type Tool = "rect" | "circle" | "arrow" | "freehand" | "blur" | "text" | "highlighter" | "select" | "eraser" | null;
 type Point = { x: number; y: number };
 
 const isMac = typeOs() === 'macos';
@@ -57,6 +57,7 @@ async function updateTargetColorSpace() {
 }
 
 interface Annotation {
+  id: string;
   tool: Tool;
   color: string;
   lineWidth: number;
@@ -68,10 +69,22 @@ interface Annotation {
   highlighterMode?: "normal" | "multiply";
 }
 
+interface WindowInfo {
+  id: number;
+  pid: number;
+  app_name: string;
+  title: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z: number;
+}
+
 // ----------------------------------------------------
-// Control Panel Window
+// Capture Menu Window
 // ----------------------------------------------------
-function ControlPanel() {
+function CaptureMenu() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -81,7 +94,7 @@ function ControlPanel() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      // Hide the control panel window before capturing so it's not visible in the screenshot
+      // Hide the capture menu window before capturing so it's not visible in the screenshot
       await getCurrentWindow().hide();
       await new Promise(r => setTimeout(r, 200));
       
@@ -89,9 +102,6 @@ function ControlPanel() {
       await invoke("take_screenshot");
       
       let target = "main";
-      if (mode === "region" || mode === "window" || isScrollingSetup) {
-        target = "region-selector";
-      }
       
       // Wake up the target window explicitly so its JS context resumes
       const targetWindow = new Window(target);
@@ -99,7 +109,7 @@ function ControlPanel() {
       await targetWindow.setFocus();
       
       // emit lightweight signal
-      await emit("load-image", { target, isScrolling: isScrollingSetup, isWindowMode: mode === "window", isFullScreen: mode === "fullscreen" });
+      await emit("load-image", { target, isScrolling: isScrollingSetup, captureMode: mode });
       await getCurrentWindow().hide();
       setIsScrollingSetup(false);
     } catch (e: any) {
@@ -119,7 +129,7 @@ function ControlPanel() {
     };
     window.addEventListener('keydown', handleKeyDown);
     
-    const unlisten = listen("open-control-panel-for-scrolling", async () => {
+    const unlisten = listen("open-capture-menu-for-scrolling", async () => {
       setIsScrollingSetup(true);
       await getCurrentWindow().show();
       await getCurrentWindow().setFocus();
@@ -141,7 +151,7 @@ function ControlPanel() {
           await win.setPosition(new LogicalPosition(x, y));
         }
       } catch (err) {
-         console.warn("Failed to set control panel position", err);
+         console.warn("Failed to set capture menu position", err);
       }
     });
     
@@ -198,490 +208,57 @@ function ControlPanel() {
 }
 
 // ----------------------------------------------------
-// Region Selector Window
 // ----------------------------------------------------
-function RegionSelector() {
-  const { t } = useTranslation();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [baseImage, setBaseImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
-  const [startPos, setStartPos] = useState<Point | null>(null);
-  const [currentPos, setCurrentPos] = useState<Point | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isScrollingMode, setIsScrollingMode] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isHiding, setIsHiding] = useState(false);
-  const [isWindowMode, setIsWindowMode] = useState(false);
-  const [monitorPos, setMonitorPos] = useState({ x: 0, y: 0 });
-  const [windows, setWindows] = useState<any[]>([]);
-  const [hoveredWindow, setHoveredWindow] = useState<any | null>(null);
-  const [pendingFullScreenScroll, setPendingFullScreenScroll] = useState(false);
-
-  useEffect(() => {
-    const unlistenStop = listen("scrolling-stopped", async () => {
-      setIsRecording(false);
-      try { await getCurrentWindow().setIgnoreCursorEvents(false); } catch (e) { console.warn(e); }
-      
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke("stop_scrolling_capture");
-      } catch (e) {
-        console.error("Error stopping scrolling capture:", e);
-      }
-      
-      await emit("load-image", { target: "main" });
-      await getCurrentWindow().hide();
-    });
-    return () => { unlistenStop.then(f => f()); }
-  }, []);
-
-  useEffect(() => {
-    const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
-      event.preventDefault();
-      await getCurrentWindow().hide();
-    });
-
-    const unlisten = listen<{ target: string, isScrolling?: boolean, isWindowMode?: boolean, isFullScreen?: boolean }>("load-image", async (e) => {
-      if (e.payload.target !== "region-selector") return;
-      await updateTargetColorSpace();
-      setIsScrollingMode(e.payload.isScrolling || false);
-      setIsRecording(false);
-      setIsHiding(false);
-      
-      try { await getCurrentWindow().setIgnoreCursorEvents(false); } catch (err) { console.warn(err); }
-      
-      try {
-        const { currentMonitor, primaryMonitor } = await import('@tauri-apps/api/window');
-        let monitor = await currentMonitor();
-        if (!monitor) {
-          monitor = await primaryMonitor();
-        }
-        
-        if (monitor) {
-          setMonitorPos({ x: monitor.position.x, y: monitor.position.y });
-          await getCurrentWindow().setSize(monitor.size);
-          await getCurrentWindow().setPosition(monitor.position);
-        }
-        
-        setIsWindowMode(e.payload.isWindowMode || false);
-        if (e.payload.isWindowMode) {
-          try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            const winList = await invoke<any[]>("get_windows");
-            setWindows(winList);
-          } catch (err) {
-            console.error("Failed to fetch windows", err);
-          }
-        }
-        
-        await getCurrentWindow().show(); // Force show to display errors
-        await getCurrentWindow().setFocus();
-        
-        // Fetch raw PNG bytes via IPC
-        const bytes = await invoke<ArrayBuffer | Uint8Array>("get_image_buffer");
-        
-        const blob = new Blob([bytes], { type: 'image/png' });
-        const url = URL.createObjectURL(blob);
-        
-        const img = new Image();
-        img.onload = () => {
-          const tempCanvas = document.createElement("canvas");
-          tempCanvas.width = img.width;
-          tempCanvas.height = img.height;
-          const tempCtx = tempCanvas.getContext("2d");
-          if (tempCtx) {
-            tempCtx.drawImage(img, 0, 0);
-            const rawData = tempCtx.getImageData(0, 0, img.width, img.height);
-            try {
-              const p3Data = new ImageData(rawData.data, img.width, img.height, { colorSpace: targetColorSpace });
-              const offCanvas = document.createElement("canvas");
-              offCanvas.width = img.width;
-              offCanvas.height = img.height;
-              const offCtx = offCanvas.getContext("2d", { colorSpace: targetColorSpace } as any) as CanvasRenderingContext2D | null;
-              if (offCtx) offCtx.putImageData(p3Data, 0, 0);
-              setBaseImage(offCanvas);
-            } catch (e) {
-              // Fallback for older browsers
-              const offCanvas = document.createElement("canvas");
-              offCanvas.width = img.width;
-              offCanvas.height = img.height;
-              const offCtx = offCanvas.getContext("2d");
-              if (offCtx) offCtx.drawImage(img, 0, 0);
-              setBaseImage(offCanvas);
-            }
-          }
-          URL.revokeObjectURL(url);
-          
-          if (e.payload.isFullScreen && e.payload.isScrolling) {
-            setPendingFullScreenScroll(true);
-          }
-        };
-        img.onerror = () => {
-          setErrorMsg(t('app.failed_to_load'));
-          URL.revokeObjectURL(url);
-        };
-        img.src = url;
-      } catch (err: any) {
-        setErrorMsg(String(err));
-      }
-    });
-    return () => { 
-      unlisten.then(f => f()); 
-      unlistenClose.then(f => f());
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => {
-      const canvas = canvasRef.current;
-      if (!canvas || !baseImage) return;
-      const ctx = (canvas.getContext("2d", { colorSpace: targetColorSpace } as any) || canvas.getContext("2d")) as CanvasRenderingContext2D | null;
-      if (!ctx) return;
-
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-
-      // Draw full image dimmed
-      ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      if (isRecording) {
-        // If recording, we just want a clear canvas because the window will be hidden.
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        return;
-      }
-
-      // Draw bright selection area
-      if (isWindowMode && hoveredWindow && !isDragging) {
-        // Draw window highlight
-        const wx = hoveredWindow.x - monitorPos.x;
-        const wy = hoveredWindow.y - monitorPos.y;
-        const ww = hoveredWindow.width;
-        const wh = hoveredWindow.height;
-        
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(wx, wy, ww, wh);
-        ctx.clip();
-        ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
-        
-        ctx.fillStyle = "rgba(129, 140, 248, 0.2)"; // Soft blue tint
-        ctx.fillRect(wx, wy, ww, wh);
-        ctx.strokeStyle = "#818cf8";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(wx, wy, ww, wh);
-      } else if (startPos && currentPos) {
-        const rx = Math.min(startPos.x, currentPos.x);
-        const ry = Math.min(startPos.y, currentPos.y);
-        const rw = Math.abs(currentPos.x - startPos.x);
-        const rh = Math.abs(currentPos.y - startPos.y);
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(rx, ry, rw, rh);
-        ctx.clip();
-        ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
-        
-        ctx.strokeStyle = "#818cf8";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(rx, ry, rw, rh);
-      }
-    };
-    
-    window.addEventListener("resize", handleResize);
-    handleResize();
-    return () => window.removeEventListener("resize", handleResize);
-  }, [baseImage, startPos, currentPos, isRecording, isWindowMode, hoveredWindow, monitorPos]);
-
-  useEffect(() => {
-    if (pendingFullScreenScroll && baseImage) {
-      setPendingFullScreenScroll(false);
-      startScrollingCaptureLogic(0, 0, window.innerWidth, window.innerHeight);
-    }
-  }, [pendingFullScreenScroll, baseImage]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        getCurrentWindow().hide();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  const startScrollingCaptureLogic = async (rx: number, ry: number, rw: number, rh: number) => {
-    if (!baseImage) return;
-    const scaleX = baseImage.width / window.innerWidth;
-    const scaleY = baseImage.height / window.innerHeight;
-    
-    const physicalW = Math.round(rw * scaleX);
-    const physicalH = Math.round(rh * scaleY);
-    const physicalX = Math.round(rx * scaleX);
-    const physicalY = Math.round(ry * scaleY);
-    
-    setIsRecording(true);
-    setIsHiding(true);
-    
-    // Wait just 50ms for the DOM to paint the opacity: 0
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // Hide Region Selector asynchronously (OS might take 200ms+ due to animation)
-    getCurrentWindow().hide().catch(console.error);
-
-    // 6. Show the stop recording button
-    const { Window } = await import('@tauri-apps/api/window');
-    const stopWin = await Window.getByLabel('stop-recording');
-    const { loadSettings } = await import('./store');
-    const settings = await loadSettings();
-    
-    if (stopWin) {
-      const { LogicalPosition } = await import('@tauri-apps/api/dpi');
-      const pos = settings.stopButtonPosition || "bottom";
-      
-      const margin = 50;
-      const w = 80;
-      const h = 80;
-      let nx = window.innerWidth / 2 - w / 2;
-      let ny = window.innerHeight - h - margin;
-      
-      if (pos === "top") {
-          ny = margin;
-      } else if (pos === "left") {
-          nx = margin;
-          ny = window.innerHeight / 2 - h / 2;
-      } else if (pos === "right") {
-          nx = window.innerWidth - w - margin;
-          ny = window.innerHeight / 2 - h / 2;
-      }
-      
-      if (pos !== "hidden") {
-        await stopWin.setPosition(new LogicalPosition(nx, ny));
-        await stopWin.show();
-      }
-    }
-    
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke("start_scrolling_capture", {
-        x: physicalX,
-        y: physicalY,
-        w: physicalW,
-        h: physicalH,
-        maxDurationSeconds: settings.maxRecordingDuration || 30
-      });
-      // Do NOT call load-image yet. We wait for stop_scrolling_capture.
-    } catch (e) {
-      console.error(e);
-      if (stopWin) stopWin.hide().catch(console.error);
-      setIsRecording(false);
-      setIsHiding(false);
-      await getCurrentWindow().show();
-    }
-  };
-
-  const onMouseDown = async (e: React.MouseEvent) => {
-    if (isRecording) return;
-    
-    if (isWindowMode) {
-      if (hoveredWindow) {
-        if (isScrollingMode) {
-          // Manually trigger the scrolling logic
-          const rx = hoveredWindow.x - monitorPos.x;
-          const ry = hoveredWindow.y - monitorPos.y;
-          const rw = hoveredWindow.width;
-          const rh = hoveredWindow.height;
-          await startScrollingCaptureLogic(rx, ry, rw, rh);
-        } else {
-          // Take regular window screenshot
-          try {
-            setIsHiding(true);
-            await getCurrentWindow().hide();
-            
-            const { invoke } = await import('@tauri-apps/api/core');
-            
-            // Activate the target app to ensure traffic lights are colored
-            if (hoveredWindow.app_name) {
-              await invoke("activate_app", { appName: hoveredWindow.app_name });
-              await new Promise(resolve => setTimeout(resolve, 300));
-            }
-            
-            await invoke("capture_window", { id: hoveredWindow.id });
-            await emit("load-image", { target: "main" });
-          } catch (err) {
-            console.error("Window capture failed", err);
-          }
-        }
-      }
-      return;
-    }
-    
-    setStartPos({ x: e.clientX, y: e.clientY });
-    setCurrentPos({ x: e.clientX, y: e.clientY });
-    setIsDragging(true);
-  };
-
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (isRecording) return;
-    
-    if (isWindowMode && !isDragging) {
-      // Find the hovered window
-      const globalX = e.clientX + monitorPos.x;
-      const globalY = e.clientY + monitorPos.y;
-      
-      const hovered = windows.find(w => 
-        globalX >= w.x && globalX <= w.x + w.width &&
-        globalY >= w.y && globalY <= w.y + w.height
-      );
-      setHoveredWindow(hovered || null);
-      return;
-    }
-    
-    if (!isDragging) return;
-    setCurrentPos({ x: e.clientX, y: e.clientY });
-  };
-
-  const onMouseUp = async () => {
-    if (!isDragging || !startPos || !currentPos || !baseImage || !canvasRef.current || isRecording) return;
-    setIsDragging(false);
-
-    const rx = Math.min(startPos.x, currentPos.x);
-    const ry = Math.min(startPos.y, currentPos.y);
-    const rw = Math.abs(currentPos.x - startPos.x);
-    const rh = Math.abs(currentPos.y - startPos.y);
-
-    if (rw > 10 && rh > 10) {
-      if (isScrollingMode) {
-        await startScrollingCaptureLogic(rx, ry, rw, rh);
-      } else {
-        // Crop image
-        const scaleX = baseImage.width / window.innerWidth;
-        const scaleY = baseImage.height / window.innerHeight;
-        
-        const physicalW = Math.round(rw * scaleX);
-        const physicalH = Math.round(rh * scaleY);
-        const physicalX = Math.round(rx * scaleX);
-        const physicalY = Math.round(ry * scaleY);
-        
-        const offCanvas = document.createElement("canvas");
-        offCanvas.width = physicalW;
-        offCanvas.height = physicalH;
-        const offCtx = offCanvas.getContext("2d");
-        if (offCtx) {
-          offCtx.drawImage(
-            baseImage,
-            physicalX, physicalY, physicalW, physicalH,
-            0, 0, physicalW, physicalH
-          );
-          
-          const dataUrl = offCanvas.toDataURL("image/png");
-          const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
-          const bytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-          
-          try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            await invoke("store_cropped_image", { bytes: Array.from(bytes) });
-            await emit("load-image", { target: "main" });
-          } catch (err) {
-            console.error("Failed to store cropped image", err);
-          }
-        }
-        await getCurrentWindow().hide();
-      }
-    } else {
-      // User clicked without dragging, abort
-      await getCurrentWindow().hide();
-    }
-  };
-
-  useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        await getCurrentWindow().hide();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  return (
-    <div className="h-screen w-screen cursor-crosshair relative" style={{ opacity: isHiding ? 0 : 1 }}>
-       {errorMsg && <div className="absolute top-0 left-0 w-full p-4 bg-red-600 text-white z-50 overflow-auto max-h-full font-mono text-sm">{errorMsg}</div>}
-       <canvas 
-          ref={canvasRef}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          className="w-full h-full block"
-       />
-    </div>
-  );
-}
-
-// ----------------------------------------------------
-// Editor Window (Main)
-// ----------------------------------------------------
-// Componente de seleção de tamanho da fonte (Combobox)
-function FontSizeSelector({ value, onChange }: { value: number, onChange: (v: number) => void }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [inputValue, setInputValue] = useState(value.toString());
-  const options = [8, 10, 12, 14, 16, 20, 24, 32, 48, 54, 72];
-  
-  useEffect(() => { setInputValue(value.toString()); }, [value]);
-
-  return (
-    <div className="relative flex items-center">
-      <input 
-        type="text" 
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-        onBlur={() => {
-           const val = parseInt(inputValue);
-           if (!isNaN(val) && val > 0) onChange(val);
-           else setInputValue(value.toString());
-           setTimeout(() => setIsOpen(false), 200);
-        }}
-        onFocus={() => setIsOpen(true)}
-        className="w-14 bg-navy-700 text-white border border-navy-600 rounded-md px-2 py-1 text-sm outline-none focus:border-indigo-500"
-      />
-      {isOpen && (
-        <div className="absolute top-full mt-1 w-full bg-navy-800 border border-navy-600 rounded-md shadow-lg z-50 max-h-40 overflow-y-auto custom-scrollbar">
-          {options.map(opt => (
-            <div 
-              key={opt} 
-              className="px-2 py-1 hover:bg-indigo-600 cursor-pointer text-sm text-white"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setInputValue(opt.toString());
-                onChange(opt);
-                setIsOpen(false);
-              }}
-            >
-              {opt}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function Editor() {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [baseImage, setBaseImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
+  
+  // Toolbar drag state
+  const [toolbarOffset, setToolbarOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false);
+  const toolbarDragStart = useRef({ x: 0, y: 0 });
+  const initialOffsetStart = useRef({ x: 0, y: 0 });
+  
+  // Overlay state machine
+  const [overlayMode, setOverlayMode] = useState<"IDLE" | "SELECTING" | "SELECTING_WINDOW" | "EDITING">("IDLE");
+  const [captureModeState, setCaptureModeState] = useState<string>("region");
+  const [cropRegion, setCropRegion] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+  const [startPos, setStartPos] = useState<Point | null>(null);
+  const [currentPos, setCurrentPos] = useState<Point | null>(null);
+  const [isResizing, setIsResizing] = useState<string | null>(null); // handle name: 'nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'
+  
+  // Annotation editing state
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const selectedAnnotationIdRef = useRef<string | null>(null);
+  const selectedAnnotationIsTextRef = useRef<boolean>(false);
+  const [isResizingAnnotation, setIsResizingAnnotation] = useState<string | null>(null);
+  const [isMovingAnnotation, setIsMovingAnnotation] = useState(false);
+  
+  // Window Capture state
+  const [windows, setWindows] = useState<WindowInfo[]>([]);
+  const [hoveredWindow, setHoveredWindow] = useState<WindowInfo | null>(null);
+  const [monitorOffset, setMonitorOffset] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
+  
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [redoStack, setRedoStack] = useState<Annotation[]>([]);
+  const [redoStack, setRedoStack] = useState<Annotation[][]>([]);
+  const [undoStack, setUndoStack] = useState<Annotation[][]>([]);
+  
+  useEffect(() => { 
+    selectedAnnotationIdRef.current = selectedAnnotationId; 
+    selectedAnnotationIsTextRef.current = annotations.find(a => a.id === selectedAnnotationId)?.tool === "text" || false;
+  }, [selectedAnnotationId, annotations]);
+  
+  const historySnapshot = useRef<Annotation[] | null>(null);
+  const hasEditedAnnotation = useRef(false);
   const [currentTool, setCurrentTool] = useState<Tool | null>(null);
   const [currentColor, setCurrentColor] = useState<string>("#ef4444"); 
   const [lineWidth, setLineWidth] = useState<number>(4);
   const [fontFamily, setFontFamily] = useState<string>("Inter");
   const [fontSize, setFontSize] = useState<number>(24);
   const [highlighterMode, setHighlighterMode] = useState<"normal" | "multiply">("normal");
+  const [toolbarPosition, setToolbarPosition] = useState<"bottom" | "top">("bottom");
   const [activeText, setActiveText] = useState<{ x: number, y: number, clientX: number, clientY: number, text: string } | null>(null);
   
   const [isDrawing, setIsDrawing] = useState(false);
@@ -690,23 +267,139 @@ function Editor() {
   const [canvasSize, setCanvasSize] = useState<{width: number, height: number} | null>(null);
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
   const isCancellingText = useRef(false);
+  const isHoveringHeader = useRef(false);
   const colorInputRef = useRef<HTMLInputElement>(null);
+  
+  const moveStartPos = useRef<{ x: number, y: number } | null>(null);
+  const resizeStartAnnotation = useRef<Annotation | null>(null);
+
+  const updateColor = useCallback((newColor: string) => {
+    setCurrentColor(newColor);
+    setAnnotations(prevAnns => {
+      const id = selectedAnnotationIdRef.current;
+      if (!id) return prevAnns;
+      if (!historySnapshot.current) historySnapshot.current = prevAnns;
+      hasEditedAnnotation.current = true;
+      return prevAnns.map(a => a.id === id ? { ...a, color: newColor } : a);
+    });
+  }, []);
+
+  const updateLineWidth = useCallback((updater: number | ((prev: number) => number)) => {
+    setLineWidth(prev => {
+      const newWidth = typeof updater === 'function' ? updater(prev) : updater;
+      setAnnotations(prevAnns => {
+        const id = selectedAnnotationIdRef.current;
+        if (!id) return prevAnns;
+        const ann = prevAnns.find(a => a.id === id);
+        if (!ann || ann.tool === "text") return prevAnns;
+        if (!historySnapshot.current) historySnapshot.current = prevAnns;
+        hasEditedAnnotation.current = true;
+        return prevAnns.map(a => a.id === id ? { ...a, lineWidth: newWidth } : a);
+      });
+      return newWidth;
+    });
+  }, []);
+
+  const updateFontSize = useCallback((updater: number | ((prev: number) => number)) => {
+    setFontSize(prev => {
+      const newSize = typeof updater === 'function' ? updater(prev) : updater;
+      setAnnotations(prevAnns => {
+        const id = selectedAnnotationIdRef.current;
+        if (!id) return prevAnns;
+        const ann = prevAnns.find(a => a.id === id);
+        if (!ann || ann.tool !== "text") return prevAnns;
+        if (!historySnapshot.current) historySnapshot.current = prevAnns;
+        hasEditedAnnotation.current = true;
+        return prevAnns.map(a => a.id === id ? { ...a, fontSize: newSize } : a);
+      });
+      return newSize;
+    });
+  }, []);
+
+  const updateFontFamily = useCallback((newFont: string) => {
+    setFontFamily(newFont);
+    setAnnotations(prevAnns => {
+      const id = selectedAnnotationIdRef.current;
+      if (!id) return prevAnns;
+      const ann = prevAnns.find(a => a.id === id);
+      if (!ann || ann.tool !== "text") return prevAnns;
+      if (!historySnapshot.current) historySnapshot.current = prevAnns;
+      hasEditedAnnotation.current = true;
+      return prevAnns.map(a => a.id === id ? { ...a, fontFamily: newFont } : a);
+    });
+  }, []);
+
+  const resetEditorState = useCallback(() => {
+    setAnnotations([]);
+    setUndoStack([]);
+    setRedoStack([]);
+    setCurrentTool(null);
+    setActiveText(null);
+    setIsDrawing(false);
+    setCurrentAnnotation(null);
+    setSelectedAnnotationId(null);
+    historySnapshot.current = null;
+  }, []);
+
+  useEffect(() => {
+    const win = getCurrentWindow();
+    if (overlayMode === "IDLE") {
+      win.setIgnoreCursorEvents(true).catch(console.warn);
+      win.hide().catch(console.warn);
+    } else {
+      win.setIgnoreCursorEvents(false).catch(console.warn);
+    }
+  }, [overlayMode]);
 
   useEffect(() => {
     const unlistenClose = getCurrentWindow().onCloseRequested(async (event) => {
       event.preventDefault();
+      resetEditorState();
       await getCurrentWindow().hide();
     });
 
-    const unlisten = listen<{ dataUrl?: string, target: string }>("load-image", async (e) => {
+    const unlisten = listen<{ dataUrl?: string, target: string, captureMode?: string }>("load-image", async (e) => {
       if (e.payload.target !== "main") return;
       await updateTargetColorSpace();
       
+      const captureMode = e.payload.captureMode || "fullscreen";
+      setCaptureModeState(captureMode);
+      if (captureMode === "region" || captureMode === "scrolling") setOverlayMode("SELECTING");
+      else if (captureMode === "window") setOverlayMode("SELECTING_WINDOW");
+      else setOverlayMode("EDITING");
+      
+      getCurrentWindow().setFocus();
+      
       const settings = await loadSettings();
       setHighlighterMode(settings.highlighterMode || "normal");
+      setToolbarPosition(settings.toolbarPosition || "bottom");
+
+      if (captureMode === "window") {
+        const { invoke } = await import('@tauri-apps/api/core');
+        try {
+          const fetchedWindows = await invoke<WindowInfo[]>("get_windows");
+          setWindows(fetchedWindows);
+        } catch (err) {
+          console.error("Failed to fetch windows:", err);
+          setWindows([]);
+        }
+      } else {
+        setWindows([]);
+      }
+      setHoveredWindow(null);
 
       try {
-        await getCurrentWindow().center();
+        const { currentMonitor, primaryMonitor } = await import('@tauri-apps/api/window');
+        let monitor = await currentMonitor();
+        if (!monitor) monitor = await primaryMonitor();
+        
+        if (monitor) {
+          const logicalPos = monitor.position.toLogical(monitor.scaleFactor);
+          setMonitorOffset({ x: logicalPos.x, y: logicalPos.y });
+          await getCurrentWindow().setSize(monitor.size);
+          await getCurrentWindow().setPosition(monitor.position);
+        }
+
         await getCurrentWindow().show();
         await getCurrentWindow().setFocus();
         if (e.payload.dataUrl) {
@@ -744,7 +437,39 @@ function Editor() {
             
             setAnnotations([]);
             setRedoStack([]);
-            await getCurrentWindow().center();
+            setToolbarOffset({ x: 0, y: 0 });
+            if (captureMode === "fullscreen") {
+               setCropRegion({ x: 0, y: 0, w: window.innerWidth, h: window.innerHeight });
+            } else {
+               setCropRegion(null);
+            }
+            
+            const { LogicalSize, PhysicalSize, PhysicalPosition } = await import('@tauri-apps/api/dpi');
+            const { currentMonitor } = await import('@tauri-apps/api/window');
+            const monitor = await currentMonitor();
+            
+            if (captureMode === "scrolling-result") {
+              const factor = monitor ? monitor.scaleFactor : 1;
+              const maxHeight = monitor ? (monitor.size.height / factor) * 0.85 : 800;
+              const maxWidth = monitor ? (monitor.size.width / factor) * 0.85 : 1200;
+              
+              const imgLogicalWidth = img.width / factor;
+              const imgLogicalHeight = img.height / factor;
+              
+              const targetWidth = Math.min(imgLogicalWidth, maxWidth);
+              const targetHeight = Math.min(imgLogicalHeight, maxHeight);
+              
+              await getCurrentWindow().setSize(new LogicalSize(targetWidth, targetHeight));
+              await getCurrentWindow().center();
+              await getCurrentWindow().setAlwaysOnTop(true);
+            } else {
+              if (monitor) {
+                await getCurrentWindow().setSize(new PhysicalSize(monitor.size.width, monitor.size.height));
+                await getCurrentWindow().setPosition(new PhysicalPosition(monitor.position.x, monitor.position.y));
+              }
+            }
+            
+            await getCurrentWindow().show();
             await getCurrentWindow().show();
             await getCurrentWindow().setFocus();
           };
@@ -788,8 +513,41 @@ function Editor() {
 
             setAnnotations([]);
             setRedoStack([]);
-            await getCurrentWindow().center();
+            setToolbarOffset({ x: 0, y: 0 });
+            if (captureMode === "fullscreen") {
+               setCropRegion({ x: 0, y: 0, w: window.innerWidth, h: window.innerHeight });
+            } else {
+               setCropRegion(null);
+            }
+            
+            const { LogicalSize, PhysicalSize, PhysicalPosition } = await import('@tauri-apps/api/dpi');
+            const { currentMonitor } = await import('@tauri-apps/api/window');
+            const monitor = await currentMonitor();
+            
+            if (captureMode === "scrolling-result") {
+              const factor = monitor ? monitor.scaleFactor : 1;
+              const maxHeight = monitor ? (monitor.size.height / factor) * 0.85 : 800;
+              const maxWidth = monitor ? (monitor.size.width / factor) * 0.85 : 1200;
+              
+              const imgLogicalWidth = img.width / factor;
+              const imgLogicalHeight = img.height / factor;
+              
+              const targetWidth = Math.min(imgLogicalWidth, maxWidth);
+              const targetHeight = Math.min(imgLogicalHeight, maxHeight);
+              
+              await getCurrentWindow().setSize(new LogicalSize(targetWidth, targetHeight));
+              await getCurrentWindow().center();
+              await getCurrentWindow().setAlwaysOnTop(true);
+            } else {
+              if (monitor) {
+                await getCurrentWindow().setSize(new PhysicalSize(monitor.size.width, monitor.size.height));
+                await getCurrentWindow().setPosition(new PhysicalPosition(monitor.position.x, monitor.position.y));
+              }
+            }
+            
             await getCurrentWindow().show();
+            await getCurrentWindow().show();
+            await getCurrentWindow().setFocus();
             URL.revokeObjectURL(url);
           };
           img.onerror = () => {
@@ -799,11 +557,27 @@ function Editor() {
           img.src = url;
         }
       } catch (err: any) {
-         setErrorMsg(String(err));
+        if (String(err) !== "No image buffer found") {
+          setErrorMsg(String(err));
+        }
+        await getCurrentWindow().hide();
+        resetEditorState();
       }
     });
+    
+    const unlistenScrolling = listen("scrolling-stopped", async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke("stop_scrolling_capture");
+        await emit("load-image", { target: "main", isScrolling: true, captureMode: "scrolling-result" });
+      } catch (err) {
+        console.error("Failed to stitch scrolling capture", err);
+      }
+    });
+    
     return () => { 
       unlisten.then(f => f()); 
+      unlistenScrolling.then(f => f());
       unlistenClose.then(f => f());
     };
   }, []);
@@ -814,10 +588,73 @@ function Editor() {
     const ctx = (canvas.getContext("2d", { colorSpace: targetColorSpace } as any) || canvas.getContext("2d")) as CanvasRenderingContext2D | null;
     if (!ctx) return;
 
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width ? canvas.width / rect.width : 1;
+    const scaleY = rect.height ? canvas.height / rect.height : 1;
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (baseImage) {
       ctx.drawImage(baseImage, 0, 0);
+      
+      ctx.save();
+      ctx.scale(scaleX, scaleY);
+      
+      // Dimmer
+      if (overlayMode === "SELECTING" || overlayMode === "SELECTING_WINDOW" || (overlayMode === "EDITING" && cropRegion)) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+        ctx.fillRect(0, 0, rect.width, rect.height);
+      }
+      
+      // Punch hole for cropRegion or current selection
+      if (overlayMode === "SELECTING" && startPos && currentPos) {
+        const rx = Math.min(startPos.x, currentPos.x);
+        const ry = Math.min(startPos.y, currentPos.y);
+        const rw = Math.abs(currentPos.x - startPos.x);
+        const rh = Math.abs(currentPos.y - startPos.y);
+        
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rx, ry, rw, rh);
+        ctx.clip();
+        ctx.drawImage(baseImage, 0, 0, rect.width, rect.height);
+        ctx.restore();
+        
+        ctx.strokeStyle = "#818cf8";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(rx, ry, rw, rh);
+      } else if (overlayMode === "SELECTING_WINDOW" && hoveredWindow) {
+        const hx = hoveredWindow.x - monitorOffset.x;
+        const hy = hoveredWindow.y - monitorOffset.y;
+        const hw = hoveredWindow.width;
+        const hh = hoveredWindow.height;
+        
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(hx, hy, hw, hh);
+        ctx.clip();
+        ctx.drawImage(baseImage, 0, 0, rect.width, rect.height);
+        ctx.restore();
+        
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([]);
+        ctx.strokeRect(hx, hy, hw, hh);
+        
+        ctx.fillStyle = "rgba(59, 130, 246, 0.2)";
+        ctx.fillRect(hx, hy, hw, hh);
+      } else if (overlayMode === "EDITING" && cropRegion) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cropRegion.x, cropRegion.y, cropRegion.w, cropRegion.h);
+        ctx.clip();
+        ctx.drawImage(baseImage, 0, 0, rect.width, rect.height);
+        ctx.restore();
+        
+        // Don't draw the dashed border when editing, to keep it clean like Flameshot
+      }
+
     } else {
       ctx.fillStyle = "#1e293b";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -850,12 +687,16 @@ function Editor() {
           const dw = Math.max(1, Math.floor(w / blockSize));
           const dh = Math.max(1, Math.floor(h / blockSize));
           
+          const sx = x * scaleX;
+          const sy = y * scaleY;
+          const sw = w * scaleX;
+          const sh = h * scaleY;
           const temp = document.createElement("canvas");
           temp.width = canvas.width;
           temp.height = canvas.height;
           const tCtx = (temp.getContext("2d", { colorSpace: targetColorSpace } as any) || temp.getContext("2d")) as CanvasRenderingContext2D | null;
           if (tCtx && baseImage) {
-            tCtx.drawImage(baseImage, x, y, w, h, 0, 0, dw, dh);
+            tCtx.drawImage(baseImage, sx, sy, sw, sh, 0, 0, dw, dh);
             
             ctx.save();
             ctx.imageSmoothingEnabled = false;
@@ -920,33 +761,367 @@ function Editor() {
       }
     };
 
+    if (cropRegion) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(cropRegion.x, cropRegion.y, cropRegion.w, cropRegion.h);
+      ctx.clip();
+    }
+    
     blurAnns.forEach(drawAnn);
     otherAnns.forEach(drawAnn);
 
-  }, [baseImage, annotations, currentAnnotation]);
+    if (cropRegion) {
+      ctx.restore();
+    }
+    if (baseImage) ctx.restore(); // Restore scale
+  }, [baseImage, overlayMode, cropRegion, startPos, currentPos, annotations, currentAnnotation, hoveredWindow, monitorOffset]);
 
   useEffect(() => {
     redraw();
   }, [redraw]);
 
-  const getMousePos = (e: React.MouseEvent | MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
+  useEffect(() => {
+    if (!isResizing) return;
     
-    // Fallback if dimensions are 0
-    if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
-    
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY
+    const onPointerMove = (e: PointerEvent) => {
+      setCropRegion(prev => {
+        if (!prev) return prev;
+        let { x, y, w, h } = prev;
+        
+        if (isResizing.includes('w')) {
+          const diff = e.clientX - x;
+          x = e.clientX;
+          w = w - diff;
+        }
+        if (isResizing.includes('e')) {
+          w = e.clientX - x;
+        }
+        if (isResizing.includes('n')) {
+          const diff = e.clientY - y;
+          y = e.clientY;
+          h = h - diff;
+        }
+        if (isResizing.includes('s')) {
+          h = e.clientY - y;
+        }
+        
+        // Prevent negative size
+        if (w < 20) {
+          x -= (20 - w);
+          w = 20;
+        }
+        if (h < 20) {
+          y -= (20 - h);
+          h = 20;
+        }
+        
+        return { x, y, w, h };
+      });
     };
-  };
+    
+    const onPointerUp = () => setIsResizing(null);
+    
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (currentTool !== "select") {
+      setSelectedAnnotationId(null);
+    }
+  }, [currentTool]);
+
+  useEffect(() => {
+    if (!isMovingAnnotation || !selectedAnnotationId) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      hasEditedAnnotation.current = true;
+      setAnnotations(prev => prev.map(ann => {
+        if (ann.id !== selectedAnnotationId) return ann;
+        if (!moveStartPos.current) return ann;
+        
+        const dx = e.clientX - moveStartPos.current.x;
+        const dy = e.clientY - moveStartPos.current.y;
+        
+        let newAnn = { ...ann };
+        if (newAnn.rect) {
+          newAnn.rect = { ...newAnn.rect, x: newAnn.rect.x + dx, y: newAnn.rect.y + dy };
+        }
+        if (newAnn.points) {
+          newAnn.points = newAnn.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        }
+        
+        moveStartPos.current = { x: e.clientX, y: e.clientY };
+        return newAnn;
+      }));
+    };
+
+    const onPointerUp = () => {
+      if (hasEditedAnnotation.current && historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        hasEditedAnnotation.current = false;
+        historySnapshot.current = null;
+      }
+      setIsMovingAnnotation(false);
+      moveStartPos.current = null;
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isMovingAnnotation, selectedAnnotationId]);
+
+  useEffect(() => {
+    if (!isResizingAnnotation || !selectedAnnotationId) return;
+    
+    const onPointerMove = (e: PointerEvent) => {
+      hasEditedAnnotation.current = true;
+      setAnnotations(prev => prev.map(ann => {
+        if (ann.id !== selectedAnnotationId) return ann;
+        if (!resizeStartAnnotation.current) return ann;
+        
+        let newAnn = { ...ann };
+        
+        if (ann.tool === "rect" || ann.tool === "circle") {
+          let { x, y, w, h } = resizeStartAnnotation.current.rect!;
+          
+          if (isResizingAnnotation.includes('w')) {
+            const diff = e.clientX - x;
+            x = e.clientX;
+            w = w - diff;
+          }
+          if (isResizingAnnotation.includes('e')) {
+            w = e.clientX - x;
+          }
+          if (isResizingAnnotation.includes('n')) {
+            const diff = e.clientY - y;
+            y = e.clientY;
+            h = h - diff;
+          }
+          if (isResizingAnnotation.includes('s')) {
+            h = e.clientY - y;
+          }
+          
+          if (e.shiftKey) {
+            const size = Math.max(Math.abs(w), Math.abs(h));
+            if (isResizingAnnotation.includes('w')) {
+              x = (x + w) - size;
+              w = size;
+            } else if (isResizingAnnotation.includes('e')) {
+              w = size;
+            }
+            if (isResizingAnnotation.includes('n')) {
+              y = (y + h) - size;
+              h = size;
+            } else if (isResizingAnnotation.includes('s')) {
+              h = size;
+            }
+          }
+          
+          // Allow negative width/height visually, but normalize by flipping coordinates.
+          // Wait, the drawing logic works best with w/h >= 0.
+          if (w < 0) { x += w; w = Math.abs(w); }
+          if (h < 0) { y += h; h = Math.abs(h); }
+          
+          newAnn.rect = { x, y, w, h };
+        } else if (ann.tool === "arrow") {
+          // 'start' or 'end' handle
+          let p1 = { ...resizeStartAnnotation.current.points[0] };
+          let p2 = { ...resizeStartAnnotation.current.points[1] };
+          
+          let targetPoint = isResizingAnnotation === 'start' ? p1 : p2;
+          let anchorPoint = isResizingAnnotation === 'start' ? p2 : p1;
+          
+          targetPoint.x = e.clientX;
+          targetPoint.y = e.clientY;
+
+          if (e.shiftKey) {
+            const dx = targetPoint.x - anchorPoint.x;
+            const dy = targetPoint.y - anchorPoint.y;
+            const angle = Math.atan2(dy, dx);
+            const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            const dist = Math.hypot(dx, dy);
+            targetPoint.x = anchorPoint.x + Math.cos(snappedAngle) * dist;
+            targetPoint.y = anchorPoint.y + Math.sin(snappedAngle) * dist;
+          }
+          
+          if (isResizingAnnotation === 'start') p1 = targetPoint;
+          else p2 = targetPoint;
+          
+          newAnn.points = [p1, p2];
+        }
+        
+        return newAnn;
+      }));
+    };
+    
+    const onPointerUp = () => {
+      if (hasEditedAnnotation.current && historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        hasEditedAnnotation.current = false;
+        historySnapshot.current = null;
+      }
+      setIsResizingAnnotation(null);
+      resizeStartAnnotation.current = null;
+    };
+    
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isResizingAnnotation, selectedAnnotationId]);
+
+  useEffect(() => {
+    if (!isDraggingToolbar) return;
+    
+    const onPointerMove = (e: PointerEvent) => {
+      const dx = e.clientX - toolbarDragStart.current.x;
+      const dy = e.clientY - toolbarDragStart.current.y;
+      setToolbarOffset({
+        x: initialOffsetStart.current.x + dx,
+        y: initialOffsetStart.current.y + dy
+      });
+    };
+    
+    const onPointerUp = () => setIsDraggingToolbar(false);
+    
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [isDraggingToolbar]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const handleWheel = (e: WheelEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+      }
+    };
+    
+    // Use { passive: false } to allow e.preventDefault()
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  const getMousePos = useCallback((e: MouseEvent | React.MouseEvent | PointerEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: e.clientX, y: e.clientY };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+  }, []);
+
+  const getClientPos = useCallback((x: number, y: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { clientX: x, clientY: y };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      clientX: x + rect.left,
+      clientY: y + rect.top
+    };
+  }, []);
+
+  const getAnnotationAtPos = useCallback((x: number, y: number): Annotation | null => {
+    // iterate backwards to find the top-most annotation
+    for (let i = annotations.length - 1; i >= 0; i--) {
+      const ann = annotations[i];
+      if (ann.tool === "rect" || ann.tool === "circle" || ann.tool === "blur") {
+        if (ann.rect) {
+          const rx = Math.min(ann.rect.x, ann.rect.x + ann.rect.w);
+          const ry = Math.min(ann.rect.y, ann.rect.y + ann.rect.h);
+          const rw = Math.abs(ann.rect.w);
+          const rh = Math.abs(ann.rect.h);
+          if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) {
+            return ann;
+          }
+        }
+      } else if (ann.tool === "text") {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (ctx && ann.text && ann.points[0]) {
+          ctx.font = `${ann.fontSize}px ${ann.fontFamily}`;
+          const lines = ann.text.split('\n');
+          let maxWidth = 0;
+          let totalHeight = lines.length * (ann.fontSize || 24) * 1.2;
+          for (const line of lines) {
+            const metrics = ctx.measureText(line);
+            if (metrics.width > maxWidth) maxWidth = metrics.width;
+          }
+          const tx = ann.points[0].x;
+          const ty = ann.points[0].y;
+          if (x >= tx && x <= tx + maxWidth && y >= ty && y <= ty + totalHeight) {
+            return ann;
+          }
+        }
+      } else if (ann.tool === "arrow") {
+        if (ann.points.length >= 2) {
+          const p1 = ann.points[0];
+          const p2 = ann.points[1];
+          const l2 = Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2);
+          let dist = 0;
+          if (l2 === 0) {
+            dist = Math.hypot(x - p1.x, y - p1.y);
+          } else {
+            let t = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            const projX = p1.x + t * (p2.x - p1.x);
+            const projY = p1.y + t * (p2.y - p1.y);
+            dist = Math.hypot(x - projX, y - projY);
+          }
+          if (dist <= (ann.lineWidth || 4) + 5) {
+            return ann;
+          }
+        }
+      } else if (ann.tool === "freehand" || ann.tool === "highlighter") {
+        const radius = (ann.lineWidth || 4) + 10;
+        for (let j = 0; j < ann.points.length; j++) {
+          const pt = ann.points[j];
+          if (Math.hypot(x - pt.x, y - pt.y) <= radius) {
+            return ann;
+          }
+          if (j < ann.points.length - 1) {
+            const p1 = pt;
+            const p2 = ann.points[j + 1];
+            const l2 = Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2);
+            if (l2 > 0) {
+              let t = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / l2;
+              t = Math.max(0, Math.min(1, t));
+              const projX = p1.x + t * (p2.x - p1.x);
+              const projY = p1.y + t * (p2.y - p1.y);
+              if (Math.hypot(x - projX, y - projY) <= radius) {
+                return ann;
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }, [annotations]);
 
   const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2) return; // Ignore right-clicks for drawing/selecting
     if (!baseImage) return;
     
     // Eyedropper
@@ -956,48 +1131,156 @@ function Editor() {
       if (canvas) {
         const ctx = (canvas.getContext('2d', { colorSpace: targetColorSpace } as any) || canvas.getContext('2d')) as CanvasRenderingContext2D | null;
         const pos = getMousePos(e);
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = rect.width ? canvas.width / rect.width : 1;
+        const scaleY = rect.height ? canvas.height / rect.height : 1;
+        
         if (ctx) {
-          const pixel = ctx.getImageData(pos.x, pos.y, 1, 1).data;
+          const pixel = ctx.getImageData(pos.x * scaleX, pos.y * scaleY, 1, 1).data;
           const hex = "#" + [pixel[0], pixel[1], pixel[2]].map(x => x.toString(16).padStart(2, '0')).join('');
-          setCurrentColor(hex);
+          updateColor(hex);
         }
       }
       setIsEyedropperActive(false);
       return;
     }
     
+    if (overlayMode === "SELECTING_WINDOW") {
+      if (hoveredWindow) {
+        setCropRegion({
+          x: hoveredWindow.x - monitorOffset.x,
+          y: hoveredWindow.y - monitorOffset.y,
+          w: hoveredWindow.width,
+          h: hoveredWindow.height
+        });
+        setOverlayMode("EDITING");
+        setHoveredWindow(null);
+      }
+      return;
+    }
+    
+    if (overlayMode === "SELECTING") {
+      setStartPos({ x: e.clientX, y: e.clientY });
+      setCurrentPos({ x: e.clientX, y: e.clientY });
+      return;
+    }
+    
+    if (overlayMode !== "EDITING") return;
+    
     if (!currentTool) return;
+
+    const pos = getMousePos(e);
+
+    if (currentTool === "eraser") {
+      historySnapshot.current = annotations;
+      const ann = getAnnotationAtPos(pos.x, pos.y);
+      if (ann) {
+        setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+        setRedoStack([]);
+      }
+      setIsDrawing(true);
+      return;
+    }
+
+    if (currentTool === "select") {
+      const ann = getAnnotationAtPos(pos.x, pos.y);
+      if (ann) {
+        setSelectedAnnotationId(ann.id);
+        if (e.detail === 2 && ann.tool === "text") {
+          historySnapshot.current = annotations;
+          const { clientX, clientY } = getClientPos(ann.points[0].x, ann.points[0].y);
+          setActiveText({ x: ann.points[0].x, y: ann.points[0].y, clientX, clientY, text: ann.text || "" });
+          setCurrentColor(ann.color);
+          setFontFamily(ann.fontFamily || "Inter");
+          setFontSize(ann.fontSize || 24);
+          setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+          setSelectedAnnotationId(null);
+        }
+      } else {
+        setSelectedAnnotationId(null);
+      }
+      return;
+    }
     
     if (currentTool === "text") {
       if (activeText) {
+        if (historySnapshot.current) {
+          const snap = historySnapshot.current;
+          setUndoStack(prev => [...prev, snap]);
+          setRedoStack([]);
+          historySnapshot.current = null;
+        }
+        if (activeText.text.trim()) {
+          setAnnotations(prev => [...prev, {
+            id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+          }]);
+        }
+        setActiveText(null);
+        setCurrentTool(null);
         return;
       }
       e.preventDefault();
       
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const cssX = e.clientX - rect.left;
-      const cssY = e.clientY - rect.top;
-      
-      const pos = {
-        x: cssX * scaleX,
-        y: cssY * scaleY
-      };
       
       setActiveText({ x: pos.x, y: pos.y, clientX: e.clientX, clientY: e.clientY, text: "" });
+      historySnapshot.current = annotations;
+      return;
+    }
+
+    if (activeText) {
+      if (historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        historySnapshot.current = null;
+      }
+      if (activeText.text.trim()) {
+        setAnnotations(prev => [...prev, {
+          id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+        }]);
+      }
+      setActiveText(null);
+      setCurrentTool(null);
       return;
     }
     
-    const pos = getMousePos(e);
+    historySnapshot.current = annotations;
     setIsDrawing(true);
-    setCurrentAnnotation({ tool: currentTool!, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }, highlighterMode });
+    setCurrentAnnotation({ id: crypto.randomUUID(), tool: currentTool!, color: currentColor, lineWidth, points: [pos], rect: { x: pos.x, y: pos.y, w: 0, h: 0 }, highlighterMode });
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
-    if (!isDrawing || !currentAnnotation) return;
+    if (overlayMode === "SELECTING_WINDOW") {
+      const pos = getMousePos(e);
+      const globalX = pos.x + monitorOffset.x;
+      const globalY = pos.y + monitorOffset.y;
+
+      const targetWindow = windows.find(w => 
+        globalX >= w.x && globalX <= w.x + w.width &&
+        globalY >= w.y && globalY <= w.y + w.height
+      );
+      
+      setHoveredWindow(targetWindow || null);
+      return;
+    }
+
+    if (overlayMode === "SELECTING" && startPos) {
+      setCurrentPos({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    if (!isDrawing || !currentAnnotation) {
+      if (isDrawing && currentTool === "eraser") {
+        const pos = getMousePos(e);
+        const ann = getAnnotationAtPos(pos.x, pos.y);
+        if (ann) {
+          setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+        }
+      }
+      return;
+    }
     const pos = getMousePos(e);
 
     setCurrentAnnotation(prev => {
@@ -1063,11 +1346,66 @@ function Editor() {
     });
   };
 
-  const onMouseUp = () => {
-    if (isDrawing && currentAnnotation) {
-      setAnnotations(prev => [...prev, currentAnnotation]);
-      setRedoStack([]);
+  const onMouseUp = async () => {
+    if (overlayMode === "SELECTING" && startPos && currentPos) {
+      const rx = Math.min(startPos.x, currentPos.x);
+      const ry = Math.min(startPos.y, currentPos.y);
+      const rw = Math.abs(currentPos.x - startPos.x);
+      const rh = Math.abs(currentPos.y - startPos.y);
+      if (rw > 10 && rh > 10) {
+        if (captureModeState === "scrolling") {
+          setStartPos(null);
+          setCurrentPos(null);
+          await getCurrentWindow().hide();
+          
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const { currentMonitor } = await import('@tauri-apps/api/window');
+            const monitor = await currentMonitor();
+            const factor = monitor ? monitor.scaleFactor : 1;
+            
+            const settings = await loadSettings();
+            await invoke("start_scrolling_capture", {
+              x: Math.round(rx * factor),
+              y: Math.round(ry * factor),
+              w: Math.round(rw * factor),
+              h: Math.round(rh * factor),
+              maxDurationSeconds: settings.maxRecordingDuration || 30
+            });
+          } catch (err) {
+            console.error("Failed to start scrolling capture", err);
+            await getCurrentWindow().show();
+            await getCurrentWindow().setFocus();
+          }
+        } else {
+          setCropRegion({ x: rx, y: ry, w: rw, h: rh });
+          setOverlayMode("EDITING");
+          setStartPos(null);
+          setCurrentPos(null);
+        }
+      }
+      return;
     }
+
+    if (isDrawing && currentAnnotation) {
+      if (historySnapshot.current) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+        historySnapshot.current = null;
+      }
+      setAnnotations(prev => [...prev, currentAnnotation]);
+    }
+    
+    if (currentTool === "eraser" && historySnapshot.current) {
+      if (historySnapshot.current !== annotations) {
+        const snap = historySnapshot.current;
+        setUndoStack(prev => [...prev, snap]);
+        setRedoStack([]);
+      }
+      historySnapshot.current = null;
+    }
+    
     setIsDrawing(false);
     setCurrentAnnotation(null);
   };
@@ -1084,8 +1422,47 @@ function Editor() {
         .replace("{TIMESTAMP}", Date.now().toString())
         + ".png";
 
+      const canvas = canvasRef.current;
+      
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width ? canvas.width / rect.width : 1;
+      const scaleY = rect.height ? canvas.height / rect.height : 1;
+      
+      let sourceCanvas = canvas;
+      
+      if (cropRegion || (activeText && activeText.text.trim())) {
+        const offCanvas = document.createElement("canvas");
+        const pw = cropRegion ? cropRegion.w * scaleX : canvas.width;
+        const ph = cropRegion ? cropRegion.h * scaleY : canvas.height;
+        const px = cropRegion ? cropRegion.x * scaleX : 0;
+        const py = cropRegion ? cropRegion.y * scaleY : 0;
+        
+        offCanvas.width = pw;
+        offCanvas.height = ph;
+        const offCtx = offCanvas.getContext("2d");
+        if (offCtx) {
+          offCtx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
+          
+          if (activeText && activeText.text.trim()) {
+            offCtx.scale(scaleX, scaleY);
+            offCtx.fillStyle = currentColor;
+            offCtx.font = `${fontSize}px ${fontFamily}`;
+            offCtx.textBaseline = "top";
+            const lines = activeText.text.split('\n');
+            lines.forEach((line, i) => {
+              const lx = activeText.x - (cropRegion ? cropRegion.x : 0);
+              const ly = activeText.y - (cropRegion ? cropRegion.y : 0) + (i * fontSize * 1.2);
+              offCtx.fillText(line, lx, ly);
+            });
+            offCtx.setTransform(1, 0, 0, 1, 0, 0);
+          }
+          
+          sourceCanvas = offCanvas;
+        }
+      }
+      
       const blob = await new Promise<Blob>((resolve, reject) => {
-        canvasRef.current!.toBlob((b) => {
+        sourceCanvas.toBlob((b) => {
           if (b) resolve(b);
           else reject(new Error("Blob generation failed"));
         }, "image/png");
@@ -1106,18 +1483,57 @@ function Editor() {
         console.error("FS Plugin write failed", fsErr);
       }
       
+      resetEditorState();
       await getCurrentWindow().hide();
     } catch (e) {
       console.error(e);
       setErrorMsg("Failed to save: " + e);
     }
-  }, []);
+  }, [cropRegion]);
 
   const handleCopy = useCallback(async () => {
     if (!canvasRef.current) return;
     try {
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width ? canvas.width / rect.width : 1;
+      const scaleY = rect.height ? canvas.height / rect.height : 1;
+      
+      let sourceCanvas = canvas;
+      
+      if (cropRegion || (activeText && activeText.text.trim())) {
+        const offCanvas = document.createElement("canvas");
+        const pw = cropRegion ? cropRegion.w * scaleX : canvas.width;
+        const ph = cropRegion ? cropRegion.h * scaleY : canvas.height;
+        const px = cropRegion ? cropRegion.x * scaleX : 0;
+        const py = cropRegion ? cropRegion.y * scaleY : 0;
+        
+        offCanvas.width = pw;
+        offCanvas.height = ph;
+        const offCtx = offCanvas.getContext("2d");
+        if (offCtx) {
+          offCtx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
+          
+          if (activeText && activeText.text.trim()) {
+            offCtx.scale(scaleX, scaleY);
+            offCtx.fillStyle = currentColor;
+            offCtx.font = `${fontSize}px ${fontFamily}`;
+            offCtx.textBaseline = "top";
+            const lines = activeText.text.split('\n');
+            lines.forEach((line, i) => {
+              const lx = activeText.x - (cropRegion ? cropRegion.x : 0);
+              const ly = activeText.y - (cropRegion ? cropRegion.y : 0) + (i * fontSize * 1.2);
+              offCtx.fillText(line, lx, ly);
+            });
+            offCtx.setTransform(1, 0, 0, 1, 0, 0);
+          }
+          
+          sourceCanvas = offCanvas;
+        }
+      }
+
       const blobPromise = new Promise<Blob>((resolve, reject) => {
-        canvasRef.current!.toBlob((blob) => {
+        sourceCanvas.toBlob((blob) => {
           if (blob) resolve(blob);
           else reject(new Error("Blob generation failed"));
         }, 'image/png');
@@ -1133,31 +1549,89 @@ function Editor() {
       if (settings.saveOnCopy) {
         await handleSave();
       } else {
+        resetEditorState();
         await getCurrentWindow().hide();
       }
     } catch (e) {
       setErrorMsg("Failed to copy: " + e);
     }
-  }, [handleSave]);
+  }, [handleSave, cropRegion]);
 
   const handleUndo = useCallback(() => {
-    if (annotations.length === 0) return;
-    const last = annotations[annotations.length - 1];
-    setAnnotations(annotations.slice(0, -1));
-    setRedoStack([...redoStack, last]);
-  }, [annotations, redoStack]);
+    if (isDrawing) {
+      setIsDrawing(false);
+      setCurrentAnnotation(null);
+      return;
+    }
+    setUndoStack(currentUndo => {
+      if (currentUndo.length === 0) return currentUndo;
+      const previous = currentUndo[currentUndo.length - 1];
+      
+      setAnnotations(currentAnns => {
+        setRedoStack(currentRedo => [...currentRedo, currentAnns || []]);
+        return previous || [];
+      });
+      
+      return currentUndo.slice(0, -1);
+    });
+  }, [isDrawing]);
 
   const handleRedo = useCallback(() => {
-    if (redoStack.length === 0) return;
-    const next = redoStack[redoStack.length - 1];
-    setRedoStack(redoStack.slice(0, -1));
-    setAnnotations([...annotations, next]);
-  }, [annotations, redoStack]);
+    if (isDrawing) return;
+    setRedoStack(currentRedo => {
+      if (currentRedo.length === 0) return currentRedo;
+      const next = currentRedo[currentRedo.length - 1];
+      
+      setAnnotations(currentAnns => {
+        setUndoStack(currentUndo => [...currentUndo, currentAnns || []]);
+        return next || [];
+      });
+      
+      return currentRedo.slice(0, -1);
+    });
+  }, [isDrawing]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isTyping = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      const isBracketLeft = e.key === '[' || e.code === 'BracketLeft';
+      const isBracketRight = e.key === ']' || e.code === 'BracketRight';
+
+      // Handle [ and ] keys for thickness/font size
+      if (isBracketLeft || isBracketRight) {
+        // If typing, require Cmd/Ctrl so we don't interfere with normal text input
+        if (isTyping && !e.metaKey && !e.ctrlKey) {
+          // Do nothing, let the character be typed
+        } else {
+          e.preventDefault();
+          const delta = isBracketLeft ? -1 : 1;
+          
+          const isTextAction = currentTool === "text" || activeText !== null || (currentTool === "select" && selectedAnnotationIsTextRef.current);
+          if (isTextAction) {
+            updateFontSize(prev => {
+              // Map to standard font sizes if possible, or just step by 2
+              const steps = [8, 10, 12, 14, 16, 20, 24, 32, 48, 54, 72, 100];
+              const currentIndex = steps.findIndex(s => s >= prev);
+              
+              if (delta > 0) {
+                // Increase
+                if (currentIndex === -1 || currentIndex === steps.length - 1) return prev;
+                return steps[currentIndex + 1];
+              } else {
+                // Decrease
+                if (currentIndex <= 0) return steps[0];
+                return steps[currentIndex - 1];
+              }
+            });
+          } else {
+            updateLineWidth(prev => Math.max(2, Math.min(30, prev + delta)));
+          }
+          return;
+        }
+      }
+
       // Input elements should not trigger tool shortcuts
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (isTyping) return;
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -1173,23 +1647,46 @@ function Editor() {
         }
         setCurrentTool(prev => {
           if (prev) return null;
+          resetEditorState();
           getCurrentWindow().hide();
           return null;
         });
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (selectedAnnotationIdRef.current) {
+          e.preventDefault();
+          setAnnotations(prevAnns => {
+            const id = selectedAnnotationIdRef.current;
+            if (!historySnapshot.current) historySnapshot.current = prevAnns;
+            
+            const snap = historySnapshot.current;
+            setUndoStack(prev => [...prev, snap]);
+            setRedoStack([]);
+            
+            historySnapshot.current = null;
+            hasEditedAnnotation.current = false;
+            
+            return prevAnns.filter(a => a.id !== id);
+          });
+          setSelectedAnnotationId(null);
+        }
       } else if (e.key === '1') {
-        setCurrentTool("rect");
+        setCurrentTool("select");
       } else if (e.key === '2') {
-        setCurrentTool("circle");
+        setCurrentTool("rect");
       } else if (e.key === '3') {
-        setCurrentTool("arrow");
+        setCurrentTool("circle");
       } else if (e.key === '4') {
-        setCurrentTool("freehand");
+        setCurrentTool("arrow");
       } else if (e.key === '5') {
-        setCurrentTool("blur");
+        setCurrentTool("freehand");
       } else if (e.key === '6') {
-        setCurrentTool("text");
+        setCurrentTool("blur");
       } else if (e.key === '7') {
+        setCurrentTool("text");
+      } else if (e.key === '8') {
         setCurrentTool("highlighter");
+      } else if (e.key === '9') {
+        setCurrentTool("eraser");
       } else if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
         if (e.shiftKey) {
           handleRedo();
@@ -1208,30 +1705,68 @@ function Editor() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing, activeText]);
+  }, [handleSave, handleCopy, handleUndo, handleRedo, isDrawing, activeText, currentTool]);
 
   return (
-    <main className="w-screen h-screen bg-zinc-950 overflow-hidden relative selection:bg-blue-500/30">
+    <main className="w-screen h-screen bg-transparent overflow-hidden relative selection:bg-blue-500/30">
       {errorMsg && <div className="absolute top-0 left-0 w-full p-2 bg-red-900 text-red-100 border-b border-red-800 z-50 overflow-auto max-h-full font-mono text-[11px] text-center">{errorMsg}</div>}
       
       {baseImage ? (
         <>
-          <header className="absolute top-0 left-0 right-0 h-12 px-4 flex items-center justify-between border-b border-zinc-800/80 bg-zinc-900/50 backdrop-blur-md shadow-sm z-10">
+          {overlayMode === "EDITING" && (
+            <header 
+              onMouseEnter={() => isHoveringHeader.current = true}
+              onMouseLeave={() => isHoveringHeader.current = false}
+              className="absolute h-12 px-4 flex items-center justify-between border border-zinc-800/80 bg-zinc-900/90 backdrop-blur-md shadow-lg z-20 rounded-lg pointer-events-auto"
+              style={{
+                top: captureModeState === "scrolling-result" ? undefined : ((
+                  cropRegion 
+                    ? (toolbarPosition === "top"
+                        ? (cropRegion.y >= 60 ? cropRegion.y - 60 : Math.min(window.innerHeight - 60, cropRegion.y + 10))
+                        : (cropRegion.y + cropRegion.h + 60 <= window.innerHeight 
+                            ? cropRegion.y + cropRegion.h + 10 
+                            : Math.max(10, cropRegion.y + cropRegion.h - 60)))
+                    : (toolbarPosition === "top" ? 10 : window.innerHeight - 60)
+                ) + toolbarOffset.y),
+                bottom: captureModeState === "scrolling-result" ? (toolbarPosition === "top" ? undefined : `calc(24px - ${toolbarOffset.y}px)`) : undefined,
+                left: captureModeState === "scrolling-result" ? `calc(50% + ${toolbarOffset.x}px)` : (cropRegion ? cropRegion.x + cropRegion.w / 2 : window.innerWidth / 2) + toolbarOffset.x,
+                transform: 'translateX(-50%)'
+              }}
+            >
             <div className="flex gap-1">
+              <div 
+                className="cursor-move p-1 text-zinc-500 hover:text-zinc-300 mr-2 flex items-center"
+                onPointerDown={(e) => {
+                  toolbarDragStart.current = { x: e.clientX, y: e.clientY };
+                  initialOffsetStart.current = { x: toolbarOffset.x, y: toolbarOffset.y };
+                  setIsDraggingToolbar(true);
+                  e.stopPropagation();
+                }}
+              >
+                <GripVertical size={16} />
+              </div>
               {[
+                { id: "select", icon: <MousePointer2 size={16} /> },
                 { id: "rect", icon: <Square size={16} /> },
                 { id: "circle", icon: <Circle size={16} /> },
                 { id: "arrow", icon: <ArrowRight size={16} /> },
                 { id: "freehand", icon: <Pen size={16} /> },
                 { id: "blur", icon: <Droplet size={16} /> },
                 { id: "text", icon: <Type size={16} /> },
-                { id: "highlighter", icon: <Highlighter size={16} /> }
+                { id: "highlighter", icon: <Highlighter size={16} /> },
+                { id: "eraser", icon: <Eraser size={16} /> }
               ].map((toolObj, idx) => (
                 <button 
                   key={toolObj.id}
                   onMouseDown={() => {
                     if (activeText && toolObj.id !== "text") {
-                      isCancellingText.current = true;
+                      if (activeText.text.trim()) {
+                        setAnnotations(prev => [...prev, {
+                          id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+                        }]);
+                        setRedoStack([]);
+                      }
+                      setActiveText(null);
                     }
                   }}
                   onClick={() => setCurrentTool(toolObj.id as Tool)}
@@ -1251,11 +1786,11 @@ function Editor() {
             </div>
             
             <div className="flex items-center gap-3">
-              {currentTool === "text" ? (
-                <div className="flex items-center gap-3 mr-3 border-r border-zinc-800/80 pr-3">
+              {(currentTool === "text" || activeText !== null || (currentTool === "select" && selectedAnnotationId && annotations.find(a => a.id === selectedAnnotationId)?.tool === "text")) ? (
+                <div className="flex items-center ml-4 border-l border-zinc-700/50 pl-4 space-x-3">
                   <select
                     value={fontFamily}
-                    onChange={(e) => setFontFamily(e.target.value)}
+                    onChange={(e) => updateFontFamily(e.target.value)}
                     className="bg-zinc-800 text-zinc-200 border border-zinc-700 rounded-md px-2 py-1 text-xs outline-none focus:border-blue-500/50 transition-colors"
                   >
                     <option value="Inter">Inter</option>
@@ -1267,11 +1802,18 @@ function Editor() {
                   
                   <div className="flex items-center gap-2">
                     <span className="text-zinc-500 text-[11px] font-medium">{t('app.font_size')}:</span>
-                    <FontSizeSelector value={fontSize} onChange={setFontSize} />
+                    <input 
+                      type="range" 
+                      min="8" max="100" 
+                      value={fontSize}
+                      onChange={e => updateFontSize(Number(e.target.value))}
+                      className="w-20 accent-blue-500"
+                    />
+                    <span className="text-zinc-400 text-[11px] w-6 text-center">{fontSize}</span>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 mr-3 border-r border-zinc-800/80 pr-3">
+                <div className="flex items-center gap-2 ml-4 border-l border-zinc-700/50 pl-4">
                   {currentTool === "highlighter" && (
                     <select
                       value={highlighterMode}
@@ -1294,7 +1836,7 @@ function Editor() {
                     type="range" 
                     min="2" max="30" 
                     value={lineWidth}
-                    onChange={e => setLineWidth(Number(e.target.value))}
+                    onChange={e => updateLineWidth(Number(e.target.value))}
                     className="w-20 accent-blue-500"
                   />
                   <span className="text-zinc-400 text-[11px] w-4 text-center">{lineWidth}</span>
@@ -1316,14 +1858,16 @@ function Editor() {
                   ref={colorInputRef}
                   type="color" 
                   value={currentColor}
-                  onChange={e => setCurrentColor(e.target.value)}
+                  onChange={e => updateColor(e.target.value)}
                   className="w-6 h-6 rounded-full cursor-pointer bg-transparent border-0 outline-none hover:scale-110 transition-transform"
                 />
               </div>
             </div>
             
+            <div className="w-px h-6 bg-zinc-700/50 mx-4" />
+            
             <div className="flex gap-1.5 items-center">
-              <button onClick={handleUndo} disabled={annotations.length === 0} className="p-1.5 text-xs font-medium rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-300 transition-colors relative group flex items-center justify-center">
+              <button onClick={handleUndo} disabled={undoStack.length === 0 && !isDrawing} className="p-1.5 text-xs font-medium rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-300 transition-colors relative group flex items-center justify-center">
                 <Undo size={14} />
                 <div className="absolute top-full mt-1.5 bg-zinc-800 text-zinc-200 text-[10px] font-medium px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-lg border border-zinc-700 z-30 flex items-center justify-center left-1/2 -translate-x-1/2">
                   Undo (Cmd+Z)
@@ -1344,25 +1888,19 @@ function Editor() {
               </button>
             </div>
           </header>
+          )}
 
           {/* Canvas Wrapper */}
-          <div className="absolute top-12 bottom-0 left-0 right-0 bg-zinc-950 p-4">
-            <div className="relative w-full h-full">
+          <div className={`absolute inset-0 w-full h-full cursor-crosshair ${captureModeState === "scrolling-result" ? "overflow-y-auto overflow-x-auto flex justify-center items-start bg-transparent" : ""}`}>
+            <div className={`relative ${captureModeState === "scrolling-result" ? "shadow-2xl rounded-lg overflow-hidden bg-white w-full" : "w-full h-full"}`}>
               <canvas 
                 ref={canvasRef} 
                 width={canvasSize?.width}
                 height={canvasSize?.height}
                 onMouseDown={onMouseDown} 
-                onMouseMove={currentTool ? onMouseMove : undefined} 
-                onMouseUp={currentTool ? onMouseUp : undefined} 
-                onMouseLeave={currentTool ? onMouseUp : undefined} 
-                onWheel={(e) => {
-                  if (currentTool === "text") {
-                    setFontSize(prev => Math.max(8, Math.min(100, prev - Math.sign(e.deltaY))));
-                  } else {
-                    setLineWidth(prev => Math.max(2, Math.min(30, prev - Math.sign(e.deltaY))));
-                  }
-                }}
+                onMouseMove={onMouseMove} 
+                onMouseUp={onMouseUp} 
+                onMouseLeave={onMouseUp} 
                 onContextMenu={(e) => {
                   e.preventDefault();
                   if (colorInputRef.current) {
@@ -1373,25 +1911,143 @@ function Editor() {
                     }
                   }
                 }}
-                className={`shadow-2xl rounded-sm ring-1 ring-zinc-800/50 ${isEyedropperActive ? "cursor-crosshair" : (currentTool === "freehand" ? "cursor-default" : (currentTool ? "cursor-crosshair" : "cursor-default"))}`} 
-                style={{ 
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  maxWidth: '100%', 
-                  maxHeight: '100%',
-                  width: 'auto',
-                  height: 'auto',
-                  display: 'block'
-                }}
+                className={`block ${captureModeState === "scrolling-result" ? "" : "w-full h-full"}`}
+                style={
+                  captureModeState === "scrolling-result"
+                    ? { width: "100%", height: "auto" }
+                    : undefined
+                }
               />
+              
+              {overlayMode === "EDITING" && cropRegion && captureModeState === "region" && (
+                <>
+                  <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nwse-resize z-30" style={{ left: cropRegion.x - 6, top: cropRegion.y - 6 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('nw'); }} onMouseDown={e => e.preventDefault()} />
+                  <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nesw-resize z-30" style={{ left: cropRegion.x + cropRegion.w - 6, top: cropRegion.y - 6 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('ne'); }} onMouseDown={e => e.preventDefault()} />
+                  <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nesw-resize z-30" style={{ left: cropRegion.x - 6, top: cropRegion.y + cropRegion.h - 6 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('sw'); }} onMouseDown={e => e.preventDefault()} />
+                  <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nwse-resize z-30" style={{ left: cropRegion.x + cropRegion.w - 6, top: cropRegion.y + cropRegion.h - 6 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('se'); }} onMouseDown={e => e.preventDefault()} />
+                  
+                  <div className="absolute h-3 bg-white border border-blue-500 cursor-ns-resize z-30" style={{ left: cropRegion.x + cropRegion.w / 2 - 6, top: cropRegion.y - 6, width: 12 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('n'); }} onMouseDown={e => e.preventDefault()} />
+                  <div className="absolute h-3 bg-white border border-blue-500 cursor-ns-resize z-30" style={{ left: cropRegion.x + cropRegion.w / 2 - 6, top: cropRegion.y + cropRegion.h - 6, width: 12 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('s'); }} onMouseDown={e => e.preventDefault()} />
+                  <div className="absolute w-3 bg-white border border-blue-500 cursor-ew-resize z-30" style={{ left: cropRegion.x - 6, top: cropRegion.y + cropRegion.h / 2 - 6, height: 12 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('w'); }} onMouseDown={e => e.preventDefault()} />
+                  <div className="absolute w-3 bg-white border border-blue-500 cursor-ew-resize z-30" style={{ left: cropRegion.x + cropRegion.w - 6, top: cropRegion.y + cropRegion.h / 2 - 6, height: 12 }} onPointerDown={(e) => { e.stopPropagation(); setIsResizing('e'); }} onMouseDown={e => e.preventDefault()} />
+                </>
+              )}
+
+              {selectedAnnotationId && (() => {
+                const ann = annotations.find(a => a.id === selectedAnnotationId);
+                if (!ann) return null;
+                
+                let rx = 0, ry = 0, rw = 0, rh = 0;
+                if (ann.tool === "rect" || ann.tool === "circle") {
+                  if (!ann.rect) return null;
+                  rx = Math.min(ann.rect.x, ann.rect.x + ann.rect.w);
+                  ry = Math.min(ann.rect.y, ann.rect.y + ann.rect.h);
+                  rw = Math.abs(ann.rect.w);
+                  rh = Math.abs(ann.rect.h);
+                } else if (ann.tool === "text") {
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  if (ctx && ann.text && ann.points[0]) {
+                    ctx.font = `${ann.fontSize}px ${ann.fontFamily}`;
+                    const lines = ann.text.split('\n');
+                    let maxWidth = 0;
+                    let totalHeight = lines.length * (ann.fontSize || 24) * 1.2;
+                    for (const line of lines) {
+                      const metrics = ctx.measureText(line);
+                      if (metrics.width > maxWidth) maxWidth = metrics.width;
+                    }
+                    rx = ann.points[0].x;
+                    ry = ann.points[0].y;
+                    rw = maxWidth;
+                    rh = totalHeight;
+                  }
+                } else if (ann.tool === "arrow") {
+                  rx = Math.min(ann.points[0].x, ann.points[1].x);
+                  ry = Math.min(ann.points[0].y, ann.points[1].y);
+                  rw = Math.abs(ann.points[1].x - ann.points[0].x);
+                  rh = Math.abs(ann.points[1].y - ann.points[0].y);
+                }
+
+                if (ann.tool === "arrow") {
+                  return (
+                    <div className="absolute z-20 select-none" style={{ left: rx, top: ry, width: rw, height: rh }}>
+                      <div className="absolute border border-blue-500/50 bg-blue-500/10 cursor-move" style={{ width: '100%', height: '100%' }} onPointerDown={(e) => {
+                        e.stopPropagation();
+                        historySnapshot.current = annotations;
+                        setIsMovingAnnotation(true);
+                        moveStartPos.current = { x: e.clientX, y: e.clientY };
+                      }} />
+                      <div className="absolute w-3 h-3 bg-white border border-blue-500 rounded-full cursor-crosshair z-30" style={{ left: ann.points[0].x - rx - 6, top: ann.points[0].y - ry - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('start'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                      <div className="absolute w-3 h-3 bg-white border border-blue-500 rounded-full cursor-crosshair z-30" style={{ left: ann.points[1].x - rx - 6, top: ann.points[1].y - ry - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('end'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div 
+                    className={`absolute border border-blue-500 bg-blue-500/10 z-20 select-none ${ann.tool === 'text' ? 'cursor-text' : 'cursor-move'}`}
+                    style={{ left: rx, top: ry, width: rw, height: rh }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      historySnapshot.current = annotations;
+                      setIsMovingAnnotation(true);
+                      moveStartPos.current = { x: e.clientX, y: e.clientY };
+                    }}
+                    onDoubleClick={(e) => {
+                      if (ann.tool === "text") {
+                        e.stopPropagation();
+                        historySnapshot.current = annotations;
+                        const { clientX, clientY } = getClientPos(ann.points[0].x, ann.points[0].y);
+                        setActiveText({ x: ann.points[0].x, y: ann.points[0].y, clientX, clientY, text: ann.text || "" });
+                        setCurrentColor(ann.color);
+                        setFontFamily(ann.fontFamily || "Inter");
+                        setFontSize(ann.fontSize || 24);
+                        setAnnotations(prev => prev.filter(a => a.id !== ann.id));
+                        setSelectedAnnotationId(null);
+                      }
+                    }}
+                  >
+                    {(ann.tool === "rect" || ann.tool === "circle") && (
+                      <>
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nwse-resize z-30" style={{ left: -6, top: -6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('nw'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nesw-resize z-30" style={{ left: rw - 6, top: -6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('ne'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nesw-resize z-30" style={{ left: -6, top: rh - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('sw'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 h-3 bg-white border border-blue-500 cursor-nwse-resize z-30" style={{ left: rw - 6, top: rh - 6 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('se'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        
+                        <div className="absolute h-3 bg-white border border-blue-500 cursor-ns-resize z-30" style={{ left: rw / 2 - 6, top: -6, width: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('n'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute h-3 bg-white border border-blue-500 cursor-ns-resize z-30" style={{ left: rw / 2 - 6, top: rh - 6, width: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('s'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 bg-white border border-blue-500 cursor-ew-resize z-30" style={{ left: -6, top: rh / 2 - 6, height: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('w'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                        <div className="absolute w-3 bg-white border border-blue-500 cursor-ew-resize z-30" style={{ left: rw - 6, top: rh / 2 - 6, height: 12 }} onPointerDown={(e) => { e.stopPropagation(); historySnapshot.current = annotations; setIsResizingAnnotation('e'); resizeStartAnnotation.current = ann; }} onMouseDown={e => e.preventDefault()} />
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
           
               {activeText && (
                 <textarea
                   autoFocus
+                  ref={(el) => {
+                    if (el) {
+                      el.style.height = 'auto';
+                      el.style.height = el.scrollHeight + 'px';
+                      el.style.width = 'auto';
+                      el.style.width = el.scrollWidth + 'px';
+                    }
+                  }}
+                  onFocus={(e) => {
+                    const val = e.target.value;
+                    e.target.value = '';
+                    e.target.value = val;
+                  }}
                   value={activeText.text}
-                  onChange={(e) => setActiveText({ ...activeText, text: e.target.value })}
+                  onChange={(e) => {
+                    setActiveText({ ...activeText, text: e.target.value });
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${e.target.scrollHeight}px`;
+                    e.target.style.width = 'auto';
+                    e.target.style.width = `${e.target.scrollWidth + 20}px`;
+                  }}
                   onBlur={(e) => {
                     if (isCancellingText.current) {
                       isCancellingText.current = false;
@@ -1401,11 +2057,25 @@ function Editor() {
                     if (e.relatedTarget && (e.relatedTarget as HTMLElement).closest('header')) {
                       return;
                     }
-                    if (activeText.text.trim()) {
-                      setAnnotations(prev => [...prev, {
-                        tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
-                      }]);
-                      setRedoStack([]);
+                    if (isHoveringHeader.current) {
+                      // Clicked a non-focusable element in the header (e.g. range slider in WebKit)
+                      setTimeout(() => {
+                        if (e.target) (e.target as HTMLTextAreaElement).focus();
+                      }, 0);
+                      return;
+                    }
+                    if (activeText.text.trim() || historySnapshot.current) {
+                      if (historySnapshot.current) {
+                        const snap = historySnapshot.current;
+                        setUndoStack(prev => [...prev, snap]);
+                        setRedoStack([]);
+                        historySnapshot.current = null;
+                      }
+                      if (activeText.text.trim()) {
+                        setAnnotations(prev => [...prev, {
+                          id: crypto.randomUUID(), tool: "text", color: currentColor, lineWidth, points: [{ x: activeText.x, y: activeText.y }], text: activeText.text, fontSize, fontFamily
+                        }]);
+                      }
                     }
                     setActiveText(null);
                     setCurrentTool(null);
@@ -1419,7 +2089,9 @@ function Editor() {
                     }
                   }}
                   onWheel={(e) => {
-                    setFontSize(prev => Math.max(8, Math.min(100, prev - Math.sign(e.deltaY))));
+                    if (e.metaKey || e.ctrlKey) {
+                      updateFontSize(prev => Math.max(8, Math.min(100, prev - Math.sign(e.deltaY))));
+                    }
                   }}
                   style={{
                     position: 'fixed',
@@ -1427,7 +2099,7 @@ function Editor() {
                     top: activeText.clientY,
                     color: currentColor,
                     fontFamily: fontFamily,
-                    fontSize: `${fontSize / (canvasRef.current ? canvasRef.current.width / canvasRef.current.getBoundingClientRect().width : 1)}px`,
+                    fontSize: `${fontSize}px`,
                     background: 'transparent',
                     border: 'none',
                     outline: 'none',
@@ -1446,14 +2118,7 @@ function Editor() {
             </div>
           </div>
         </>
-      ) : (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 h-full">
-           <header className="text-center">
-             <h1 className="text-3xl font-extrabold text-zinc-200 mb-2 tracking-tight opacity-90">Specture</h1>
-             <p className="text-blue-500/80 text-xs font-medium uppercase tracking-wider">{t('app.ready_in_background')}</p>
-           </header>
-        </div>
-      )}
+      ) : null}
     </main>
   );
 }
@@ -1505,13 +2170,18 @@ function MainApp() {
             
             // Update system tray menu language
             invoke('update_tray_menu', {
-              openControlPanel: i18n.t('settings.open_control_panel') || 'Open Control Panel',
+              openCaptureMenu: i18n.t('settings.open_capture_menu') || 'Open Capture Menu',
               captureFullscreen: i18n.t('settings.capture_full_screen') || 'Capture Full Screen',
               captureRegion: i18n.t('settings.capture_region') || 'Capture Region',
               captureWindow: i18n.t('settings.capture_window') || 'Capture Window',
               scrollingCapture: i18n.t('settings.scrolling_capture') || 'Scrolling Capture',
               settingsText: i18n.t('settings.title') || 'Settings...',
               quitText: i18n.t('app.quit') || 'Quit',
+              shortcutCaptureMenu: settings.shortcutCaptureMenu || null,
+              shortcutFullscreen: settings.shortcutFullScreen || null,
+              shortcutRegion: settings.shortcutRegion || null,
+              shortcutWindow: settings.shortcutWindow || null,
+              shortcutScrolling: settings.shortcutScrolling || null,
             }).catch(console.warn);
           });
           
@@ -1593,8 +2263,8 @@ function MainApp() {
                 }
               }
 
-              if (mode === "control") {
-                const cp = await Window.getByLabel("control-panel");
+              if (mode === "capture_menu") {
+                const cp = await Window.getByLabel("capture-menu");
                 if (cp) {
                   const isVis = await cp.isVisible();
                   if (isVis) {
@@ -1603,9 +2273,38 @@ function MainApp() {
                     await cp.show();
                     await cp.setFocus();
                   }
+                } else {
+                  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+                  new WebviewWindow('capture-menu', {
+                    url: '/?mode=capture-menu',
+                    title: 'Specture Options',
+                    width: 400,
+                    height: 160,
+                    decorations: false,
+                    transparent: true,
+                    alwaysOnTop: true,
+                    resizable: false,
+                    shadow: false
+                  });
+                }
+              } else if (mode === "settings") {
+                const { Window } = await import('@tauri-apps/api/window');
+                const existingSettings = await Window.getByLabel("settings");
+                if (existingSettings) {
+                  await existingSettings.show();
+                  await existingSettings.setFocus();
+                } else {
+                  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+                  new WebviewWindow('settings', {
+                    url: '/?mode=settings',
+                    title: 'Specture Settings',
+                    width: 800,
+                    height: 600,
+                    resizable: false
+                  });
                 }
               } else {
-                const cp = await Window.getByLabel("control-panel");
+                const cp = await Window.getByLabel("capture-menu");
                 if (cp) await cp.hide();
 
                 // slight delay to let CP hide
@@ -1614,19 +2313,9 @@ function MainApp() {
                 await invoke("take_screenshot");
 
                 const isScrolling = mode === "scrolling";
-                if (mode === "fullscreen") {
-                  await emit("load-image", { target: "main", isScrolling });
-                } else if (mode === "region" || mode === "window") {
-                    // Show region selector window
-                    const rs = await Window.getByLabel("region-selector");
-                    if (rs) {
-                      await rs.show();
-                      await rs.setFocus();
-                      // Tell it what mode it is
-                      await emit("load-image", { target: "region-selector", isScrolling, isWindowMode: mode === "window" });
-                    }
-                } else if (mode === "scrolling") {
-                    await emit("open-control-panel-for-scrolling");
+                if (mode === "fullscreen" || mode === "region" || mode === "window" || mode === "scrolling") {
+                  const captureMode = mode === "scrolling" ? "scrolling" : mode;
+                  await emit("load-image", { target: "main", isScrolling, captureMode });
                 }
               }
             } catch (actionErr) {
@@ -1640,7 +2329,7 @@ function MainApp() {
           const handleShortcut = async (firedShortcut: string) => {
             let mode = null;
             const normFired = normalizeShortcut(firedShortcut);
-            if (normFired === normalizeShortcut(settings.shortcutControlPanel)) mode = "control";
+            if (normFired === normalizeShortcut(settings.shortcutCaptureMenu)) mode = "capture_menu";
             else if (normFired === normalizeShortcut(settings.shortcutFullScreen)) mode = "fullscreen";
             else if (normFired === normalizeShortcut(settings.shortcutRegion)) mode = "region";
             else if (normFired === normalizeShortcut(settings.shortcutWindow)) mode = "window";
@@ -1652,7 +2341,7 @@ function MainApp() {
           const { invoke } = await import('@tauri-apps/api/core');
           await invoke('register_shortcuts', { 
             shortcuts: [
-              settings.shortcutControlPanel, 
+              settings.shortcutCaptureMenu, 
               settings.shortcutFullScreen, 
               settings.shortcutRegion,
               settings.shortcutWindow,
@@ -1710,7 +2399,7 @@ function MainApp() {
          unlistenSettings.then(f => f());
       };
     } else {
-      // For all other windows (Control Panel, Region Selector, Editor), ensure language updates dynamically
+      // For all other windows (Capture Menu, Editor), ensure language updates dynamically
       const applyLanguage = async () => {
          const settings = await loadSettings();
          if (settings.language) {
@@ -1740,8 +2429,7 @@ function MainApp() {
 
   if (!label) return null;
 
-  if (label === "control-panel") return <ControlPanel />;
-  if (label === "region-selector") return <RegionSelector />;
+  if (label === "capture-menu") return <CaptureMenu />;
   if (label === "settings") return <Settings />;
   return <Editor />;
 }

@@ -1,20 +1,15 @@
-use tauri::{
-    tray::TrayIconBuilder,
-    Manager, Builder, Emitter
-};
+use tauri::{AppHandle, Manager, State, Builder, Emitter, tray::TrayIconBuilder};
 use xcap::Monitor;
-use std::sync::Mutex;
-use tauri::State;
+use enigo::{Enigo, Mouse, Axis};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use image::ImageEncoder;
 mod stitcher;
 
 #[tauri::command]
-fn register_shortcuts(app: tauri::AppHandle, shortcuts: Vec<String>) -> Result<(), String> {
+fn register_shortcuts(app: AppHandle, shortcuts: Vec<String>) -> Result<(), String> {
     // Unregister any existing shortcuts
     let _ = app.global_shortcut().unregister_all();
     
@@ -39,7 +34,7 @@ struct AppState {
 }
 
 struct TrayStrings {
-    open_control_panel: String,
+    open_capture_menu: String,
     capture_fullscreen: String,
     capture_region: String,
     capture_window: String,
@@ -53,7 +48,7 @@ struct TrayState(Mutex<TrayStrings>);
 impl Default for TrayState {
     fn default() -> Self {
         Self(Mutex::new(TrayStrings {
-            open_control_panel: "Open Control Panel".into(),
+            open_capture_menu: "Open Capture Menu".into(),
             capture_fullscreen: "Capture Full Screen".into(),
             capture_region: "Capture Region".into(),
             capture_window: "Capture Window".into(),
@@ -107,15 +102,15 @@ async fn take_screenshot(state: State<'_, AppState>, window: tauri::WebviewWindo
 
 #[tauri::command]
 fn get_image_buffer(state: State<'_, AppState>) -> Result<tauri::ipc::Response, String> {
-    if let Some(bytes) = state.image_buffer.lock().unwrap().as_ref() {
-        Ok(tauri::ipc::Response::new(bytes.clone()))
+    if let Some(bytes) = state.image_buffer.lock().unwrap().take() {
+        Ok(tauri::ipc::Response::new(bytes))
     } else {
         Err("No image buffer found".into())
     }
 }
 
 #[tauri::command]
-fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::WebviewWindow, app: tauri::AppHandle, x: u32, y: u32, w: u32, h: u32, max_duration_seconds: u64) -> Result<(), String> {
+fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::WebviewWindow, app: AppHandle, x: u32, y: u32, w: u32, h: u32, max_duration_seconds: u64) -> Result<(), String> {
     log_debug(format!("start_scrolling_capture called. rect: {},{},{},{}", x, y, w, h));
     state.is_recording.store(true, Ordering::SeqCst);
     state.frames.lock().unwrap().clear();
@@ -150,6 +145,13 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
     let frames = state.frames.clone();
 
     thread::spawn(move || {
+        let mut enigo_opt = Enigo::new(&enigo::Settings::default()).ok();
+        let mut last_frame: Option<image::RgbaImage> = None;
+        let mut identical_frames_count = 0;
+        
+        // Wait for window to hide
+        thread::sleep(Duration::from_millis(500));
+        
         let start_time = std::time::Instant::now();
         
         while is_recording.load(Ordering::SeqCst) {
@@ -170,9 +172,51 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
 
             if let Ok(image) = monitor.capture_image() {
                 let img_cropped = image::imageops::crop_imm(&image, x, y, w, h).to_image();
-                frames.lock().unwrap().push(img_cropped);
+                
+                // Compare with last frame to detect if we reached the bottom
+                if let Some(last) = &last_frame {
+                    let mut diff_count = 0;
+                    let raw1 = last.as_raw();
+                    let raw2 = img_cropped.as_raw();
+                    for i in (0..raw1.len()).step_by(16) {
+                        if raw1.get(i) != raw2.get(i) {
+                            diff_count += 1;
+                        }
+                    }
+                    if diff_count < 1000 {
+                        identical_frames_count += 1;
+                    } else {
+                        identical_frames_count = 0;
+                    }
+                }
+                
+                frames.lock().unwrap().push(img_cropped.clone());
+                last_frame = Some(img_cropped);
+
+                if identical_frames_count >= 3 {
+                    // Reached the bottom (3 consecutive frames without change despite scrolling)
+                    is_recording.store(false, Ordering::SeqCst);
+                    let _ = app.emit("scrolling-stopped", ());
+                    break;
+                }
+                
+                if let Some(enigo) = &mut enigo_opt {
+                    let _ = enigo.scroll(10, Axis::Vertical);
+                    // Wait for smooth scroll to settle
+                    thread::sleep(Duration::from_millis(300));
+                } else {
+                    // Enigo failed to initialize (likely due to missing permissions)
+                    // We cannot scroll, so we just abort after capturing the first frame.
+                    is_recording.store(false, Ordering::SeqCst);
+                    let _ = app.emit("scrolling-stopped", ());
+                    break;
+                }
+            } else {
+                // If we failed to capture screen (permissions?), break
+                is_recording.store(false, Ordering::SeqCst);
+                let _ = app.emit("scrolling-stopped", ());
+                break;
             }
-            thread::sleep(Duration::from_millis(200));
         }
         
         let app_clone = app.clone();
@@ -189,7 +233,7 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                 let s = app_clone.state::<TrayState>();
                 let lock = s.0.lock().unwrap();
                 (
-                    lock.open_control_panel.clone(),
+                    lock.open_capture_menu.clone(),
                     lock.capture_fullscreen.clone(),
                     lock.capture_region.clone(),
                     lock.capture_window.clone(),
@@ -207,7 +251,7 @@ fn start_scrolling_capture(state: State<'_, RecordingState>, window: tauri::Webv
                             if let Ok(window_i) = MenuItemBuilder::with_id("window", strings.3).build(&app_clone) {
                                 if let Ok(region_i) = MenuItemBuilder::with_id("region", strings.2).build(&app_clone) {
                                     if let Ok(full_i) = MenuItemBuilder::with_id("fullscreen", strings.1).build(&app_clone) {
-                                        if let Ok(control_i) = MenuItemBuilder::with_id("control", strings.0).build(&app_clone) {
+                                        if let Ok(control_i) = MenuItemBuilder::with_id("capture_menu", strings.0).build(&app_clone) {
                                             if let Ok(menu) = MenuBuilder::new(&app_clone).items(&[
                                                 &control_i, &full_i, &region_i, &window_i, &scrolling_i, &sep, &settings_i, &quit_i
                                             ]).build() {
@@ -291,7 +335,7 @@ fn is_scrolling_active(state: State<'_, RecordingState>) -> bool {
     state.is_recording.load(Ordering::SeqCst)
 }
 
-static DEBUG_LOGS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DEBUG_LOGS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 #[tauri::command]
 fn set_debug_logs_enabled(enabled: bool) {
@@ -440,19 +484,24 @@ fn capture_window(id: u32, state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn update_tray_menu(
-    app: tauri::AppHandle, 
+    app: AppHandle, 
     state: State<'_, TrayState>, 
-    open_control_panel: String, 
+    open_capture_menu: String, 
     capture_fullscreen: String, 
     capture_region: String, 
     capture_window: String, 
     scrolling_capture: String, 
     settings_text: String, 
-    quit_text: String
+    quit_text: String,
+    shortcut_capture_menu: Option<String>,
+    shortcut_fullscreen: Option<String>,
+    shortcut_region: Option<String>,
+    shortcut_window: Option<String>,
+    shortcut_scrolling: Option<String>
 ) -> Result<(), String> {
     {
         let mut s = state.0.lock().unwrap();
-        s.open_control_panel = open_control_panel.clone();
+        s.open_capture_menu = open_capture_menu.clone();
         s.capture_fullscreen = capture_fullscreen.clone();
         s.capture_region = capture_region.clone();
         s.capture_window = capture_window.clone();
@@ -463,13 +512,28 @@ fn update_tray_menu(
     
     if let Some(tray) = app.tray_by_id("main_tray") {
         use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+        let mut b_capture_menu = MenuItemBuilder::with_id("capture_menu", open_capture_menu);
+        if let Some(ref sc) = shortcut_capture_menu { if !sc.is_empty() { b_capture_menu = b_capture_menu.accelerator(sc); } }
+        
+        let mut b_fullscreen = MenuItemBuilder::with_id("fullscreen", capture_fullscreen);
+        if let Some(ref sc) = shortcut_fullscreen { if !sc.is_empty() { b_fullscreen = b_fullscreen.accelerator(sc); } }
+        
+        let mut b_region = MenuItemBuilder::with_id("region", capture_region);
+        if let Some(ref sc) = shortcut_region { if !sc.is_empty() { b_region = b_region.accelerator(sc); } }
+        
+        let mut b_window = MenuItemBuilder::with_id("window", capture_window);
+        if let Some(ref sc) = shortcut_window { if !sc.is_empty() { b_window = b_window.accelerator(sc); } }
+        
+        let mut b_scrolling = MenuItemBuilder::with_id("scrolling", scrolling_capture);
+        if let Some(ref sc) = shortcut_scrolling { if !sc.is_empty() { b_scrolling = b_scrolling.accelerator(sc); } }
+
         let menu = MenuBuilder::new(&app)
             .items(&[
-                &MenuItemBuilder::with_id("control", open_control_panel).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("fullscreen", capture_fullscreen).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("region", capture_region).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("window", capture_window).build(&app).unwrap(),
-                &MenuItemBuilder::with_id("scrolling", scrolling_capture).build(&app).unwrap(),
+                &b_capture_menu.build(&app).unwrap(),
+                &b_fullscreen.build(&app).unwrap(),
+                &b_region.build(&app).unwrap(),
+                &b_window.build(&app).unwrap(),
+                &b_scrolling.build(&app).unwrap(),
                 &PredefinedMenuItem::separator(&app).unwrap(),
                 &MenuItemBuilder::with_id("settings", settings_text).build(&app).unwrap(),
                 &MenuItemBuilder::with_id("quit", quit_text).build(&app).unwrap(),
@@ -511,7 +575,7 @@ pub fn run() {
                 let s = app.state::<TrayState>();
                 let lock = s.0.lock().unwrap();
                 (
-                    lock.open_control_panel.clone(),
+                    lock.open_capture_menu.clone(),
                     lock.capture_fullscreen.clone(),
                     lock.capture_region.clone(),
                     lock.capture_window.clone(),
@@ -529,7 +593,7 @@ pub fn run() {
             let window_i = MenuItemBuilder::with_id("window", strings.3).build(app)?;
             let region_i = MenuItemBuilder::with_id("region", strings.2).build(app)?;
             let full_i = MenuItemBuilder::with_id("fullscreen", strings.1).build(app)?;
-            let control_i = MenuItemBuilder::with_id("control", strings.0).build(app)?;
+            let control_i = MenuItemBuilder::with_id("capture_menu", strings.0).build(app)?;
             
             let menu = MenuBuilder::new(app).items(&[
                 &control_i, &full_i, &region_i, &window_i, &scrolling_i, &sep, &settings_i, &quit_i
@@ -549,6 +613,20 @@ pub fn run() {
                         if let Some(window) = app.get_webview_window("settings") {
                             let _ = window.show();
                             let _ = window.set_focus();
+                        } else {
+                            if let Ok(window) = tauri::WebviewWindowBuilder::new(
+                                app,
+                                "settings",
+                                tauri::WebviewUrl::App("/?mode=settings".into())
+                            )
+                            .title("Specture Settings")
+                            .inner_size(900.0, 550.0)
+                            .resizable(false)
+                            .center()
+                            .build() {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
                     }
                     action => {

@@ -9,7 +9,7 @@ export async function getStore() {
 }
 
 export interface SpectureSettings {
-  shortcutControlPanel: string;
+  shortcutCaptureMenu: string;
   shortcutFullScreen: string;
   shortcutRegion: string;
   shortcutWindow: string;
@@ -24,6 +24,7 @@ export interface SpectureSettings {
   colorSpaceMode: "auto" | "srgb" | "display-p3";
   language: string;
   highlighterMode: "normal" | "multiply";
+  toolbarPosition: "bottom" | "top";
 }
 
 export const defaultSettings: SpectureSettings = {
@@ -31,7 +32,7 @@ export const defaultSettings: SpectureSettings = {
   shortcutRegion: "CommandOrControl+Alt+4",
   shortcutWindow: "CommandOrControl+Alt+5",
   shortcutScrolling: "CommandOrControl+Alt+6",
-  shortcutControlPanel: "CommandOrControl+Alt+7",
+  shortcutCaptureMenu: "CommandOrControl+Alt+7",
   saveOnCopy: false,
   defaultSaveLocation: "",
   namingConvention: "Specture_{YYYY-MM-DD}_{HH-MM-SS}",
@@ -41,7 +42,8 @@ export const defaultSettings: SpectureSettings = {
   enableDebugLogs: false,
   colorSpaceMode: "auto",
   language: "en",
-  highlighterMode: "normal"
+  highlighterMode: "normal",
+  toolbarPosition: "bottom"
 };
 
 export async function loadSettings(): Promise<SpectureSettings> {
