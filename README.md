@@ -22,10 +22,9 @@ Specture is a modern screenshot utility designed to be lightweight, incredibly f
 
 | Feature / Menu | Screenshot |
 | :--- | :--- |
-| **Control Panel**<br>The minimalist area selector for choosing your capture mode. | <a href="docs/assets/control_panel.png" target="_blank"><img src="docs/assets/control_panel.png" width="500" alt="Control Panel"></a> |
-| **Scrolling Capture (Selection)**<br>Selecting the region before the auto-scroll begins. | <a href="docs/assets/scrolling_capture_selection.png" target="_blank"><img src="docs/assets/scrolling_capture_selection.png" width="500" alt="Scrolling Capture Selection"></a> |
+| **Capture Menu**<br>The minimalist area selector for choosing your capture mode. | <a href="docs/assets/capture_menu.png" target="_blank"><img src="docs/assets/capture_menu.png" width="500" alt="Capture Menu"></a> |
 | **Scrolling Capture (Result)**<br>A long, seamlessly stitched webpage. <br><br>*(Click to view full 5000+ px size)* | <a href="docs/assets/scrolling_capture_output.png" target="_blank"><img src="docs/assets/scrolling_capture_output.png" height="300" style="object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid #333;" alt="Scrolling Capture Output (Click to Expand)"></a> |
-| **In-Place Editor**<br>Instantly annotate with arrows, blur, text, highlighters, and freehand drawing using the floating toolbar directly on your screen. | <a href="docs/assets/specture_editor.png" target="_blank"><img src="docs/assets/specture_editor.png" width="500" alt="Editor Screenshot"></a> |
+| **In-Place Editor**<br>Instantly annotate with arrows, blur, text, highlighters, and freehand drawing using the floating toolbar directly on your screen. | <a href="docs/assets/specture_in_place_editor.png" target="_blank"><img src="docs/assets/specture_in_place_editor.png" width="500" alt="In-Place Editor"></a> |
 | **Final Result**<br>the high-quality output after saving from the editor. | <a href="docs/assets/specture_screenshot.png" target="_blank"><img src="docs/assets/specture_screenshot.png" width="500" alt="Output Screenshot"></a> |
 
 ---
