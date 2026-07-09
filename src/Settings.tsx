@@ -257,6 +257,7 @@ export default function Settings() {
                         <CheatSheetRow label={t('settings.cheat_redo', 'Redo Action')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>{shift}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>Z</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_save', 'Save Image')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>S</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_copy', 'Copy to Clipboard')} shortcut={<><Kbd>{ctrl}</Kbd><span className="text-zinc-600 text-xs">+</span><Kbd>C</Kbd></>} />
+                        <CheatSheetRow label={t('settings.cheat_delete', 'Delete Selected Annotation')} shortcut={<><Kbd>Backspace</Kbd><span className="text-zinc-600 text-xs"> / </span><Kbd>Del</Kbd></>} />
                         <CheatSheetRow label={t('settings.cheat_cancel', 'Cancel / Deselect')} shortcut={<Kbd>Esc</Kbd>} />
                       </>
                     );

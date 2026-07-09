@@ -90,7 +90,9 @@ When you are in the annotation window, you can use these shortcuts to speed up y
 | **Undo** | `Command + Z` |
 | **Redo** | `Command + Y` (or `Command + Shift + Z`) |
 | **Copy to Clipboard** | `Command + C` |
+| **Delete Selected Annotation** | `Backspace` or `Delete` |
 | **Save Image** | `Command + S` |
+| **Cancel / Deselect** | `Esc` |
 
 ---
 

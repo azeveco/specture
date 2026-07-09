@@ -54,6 +54,7 @@
     "cheat_redo": "Redo Action",
     "cheat_save": "Save Image",
     "cheat_copy": "Copy to Clipboard",
+    "cheat_delete": "Delete Selected Annotation",
     "cheat_cancel": "Cancel / Deselect",
     "unassigned": "Unassigned",
     "listening": "Listening...",
